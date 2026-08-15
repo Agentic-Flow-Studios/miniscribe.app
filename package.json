@@ -1,0 +1,100 @@
+{
+  "name": "Miniscribe",
+  "version": "0.0.1",
+  "description": "Local transcription & meeting capture with floating mini widget",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentic-flow-studios/miniscribe.app.git"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "get-model": "node scripts/get-model.mjs",
+    "build:main": "esbuild src/main.ts src/preload.ts src/asr-worker.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
+    "build:renderer": "esbuild src/renderer/main.tsx --bundle --platform=browser --format=iife --jsx=automatic --loader:.woff2=dataurl --outfile=dist/renderer.js",
+    "build:worklet": "esbuild src/renderer/capture-worklet.js --platform=browser --format=esm --outfile=dist/capture-worklet.js",
+    "build": "npm run build:main && npm run build:renderer && npm run build:worklet",
+    "typecheck": "tsc --noEmit",
+    "build:test": "esbuild src/transcription.ts src/recorder.ts src/ipc.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
+    "build:test:renderer": "esbuild src/renderer/session-metrics.ts src/renderer/transcript-export.ts --bundle --platform=node --format=cjs --outdir=dist/test",
+    "test:metrics": "npm run build:test:renderer && node test/metrics-export-test.js",
+    "test": "npm run build:test && electron test/electron-transcribe-test.js",
+    "test:diarize": "npm run build:test && electron test/electron-diarize-test.js",
+    "test:capture": "npm run build:worklet && electron test/electron-capture-test.js",
+    "test:recorder": "npm run build:test && electron test/electron-recorder-test.js",
+    "test:ipc": "npm run build && npm run build:test && electron test/electron-ipc-test.js",
+    "test:audio": "npm run build && npm run build:test && electron test/electron-audio-test.js",
+    "test:live": "npm run build:test && electron test/electron-live-test.js",
+    "test:e2e": "npm run build && npm run build:test && electron test/electron-live-e2e-test.js",
+    "test:all": "npm run test:metrics && npm run test:capture && npm run test:recorder && npm run test:ipc && npm run test:audio && npm test && npm run test:live && npm run test:e2e && npm run test:diarize",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.miniscribe.app",
+    "productName": "Miniscribe",
+    "directories": {
+      "output": "dist/installers"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Miniscribe records your microphone so it can transcribe your side of the meeting on your device."
+      }
+    },
+    "publish": {
+      "provider": "github",
+      "releaseType": "draft"
+    }
+  },
+  "astryx": {
+    "theme": "@astryxdesign/theme-neutral"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "electron": "^43.3.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.23.1",
+    "typescript": "^5.6.2"
+  },
+  "comments": {
+    "sherpa-onnx-node": "PINNED EXACT, do not add a caret. 1.13.5 declares an optional dep on sherpa-onnx-darwin-arm64@^1.13.5, which is not published (404). Optional deps fail silently, so on Apple Silicon the install looks clean and then require() throws at runtime. Revisit once darwin-arm64 catches up."
+  },
+  "dependencies": {
+    "@astryxdesign/cli": "^0.3.0",
+    "@astryxdesign/core": "^0.3.0",
+    "@astryxdesign/theme-neutral": "^0.3.0",
+    "@stylexjs/stylex": "^0.19.0",
+    "electron-updater": "^6.3.9",
+    "lucide-react": "^1.31.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sherpa-onnx-node": "1.13.4"
+  }
+}

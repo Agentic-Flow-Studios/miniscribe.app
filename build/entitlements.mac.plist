@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- V8 compiles JavaScript at runtime. Without these two, the renderer
+         crashes immediately under the hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- sherpa-onnx-node loads .node addons and onnxruntime dylibs that are not
+         signed with our team ID. Library validation rejects them otherwise, and
+         require('sherpa-onnx-node') throws at runtime in the packaged app. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- Microphone capture ("You" track). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

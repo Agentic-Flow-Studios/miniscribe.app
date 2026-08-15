@@ -1,0 +1,38 @@
+/* Self-hosted so the app keeps working with no network — the whole point of a
+   local transcription tool. The theme only NAMES a family; if the file is
+   missing the design system silently falls back to the platform sans, which is
+   what "Figtree" did before this existed.
+
+   Latin subset of the Nunito variable font (weights 400–800 in one file, 38KB).
+   Licensed OFL 1.1 — see fonts/Nunito-OFL.txt. */
+@font-face {
+  font-family: 'Nunito';
+  src: url('./fonts/nunito-latin-variable.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Astryx sets the family on its own components, not on the document, so any
+   text outside one lands on the browser default — Times New Roman. Point the
+   root at the theme's own token rather than repeating the family name, so this
+   follows whatever the theme says. */
+body {
+  font-family: var(--font-family-body);
+}
+
+/* Ensure all popovers and buttons inside popovers are left aligned */
+[popover],
+.astryx-popover,
+[role="dialog"] {
+  text-align: left !important;
+}
+
+[popover] button,
+[popover] .astryx-button,
+.astryx-popover button,
+.astryx-popover .astryx-button {
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+
