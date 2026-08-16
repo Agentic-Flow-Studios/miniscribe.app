@@ -3,6 +3,14 @@ dist/
 models/
 *.tar.bz2
 
+# build/ holds only the macOS entitlements the signer needs. Icons live in
+# assets/ and are committed: they are generated once from the logo, not built.
+build/*
+!build/entitlements.mac.plist
+
+# Throwaway userData for test runs (test/user-data.js)
+.test-userdata/
+
 # Environments & Local Configuration
 .env
 .env.*

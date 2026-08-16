@@ -1,8 +1,16 @@
 {
-  "name": "Miniscribe",
+  "name": "miniscribe",
   "version": "0.0.1",
   "description": "Local transcription & meeting capture with floating mini widget",
   "license": "MIT",
+  "author": {
+    "name": "Agentic Flow Studios",
+    "url": "https://agentic-flow.studio"
+  },
+  "homepage": "https://miniscribe.app",
+  "bugs": {
+    "url": "https://github.com/agentic-flow-studios/miniscribe.app/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/agentic-flow-studios/miniscribe.app.git"
@@ -10,12 +18,14 @@
   "main": "dist/main.js",
   "scripts": {
     "get-model": "node scripts/get-model.mjs",
+    "hash-models": "node scripts/hash-models.mjs",
     "build:main": "esbuild src/main.ts src/preload.ts src/asr-worker.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
-    "build:renderer": "esbuild src/renderer/main.tsx --bundle --platform=browser --format=iife --jsx=automatic --loader:.woff2=dataurl --outfile=dist/renderer.js",
+    "build:renderer": "node scripts/build-renderer.mjs",
     "build:worklet": "esbuild src/renderer/capture-worklet.js --platform=browser --format=esm --outfile=dist/capture-worklet.js",
     "build": "npm run build:main && npm run build:renderer && npm run build:worklet",
     "typecheck": "tsc --noEmit",
-    "build:test": "esbuild src/transcription.ts src/recorder.ts src/ipc.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
+    "lint": "eslint .",
+    "build:test": "esbuild src/transcription.ts src/recorder.ts src/ipc.ts src/updater.ts src/window-sizes.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
     "build:test:renderer": "esbuild src/renderer/session-metrics.ts src/renderer/transcript-export.ts --bundle --platform=node --format=cjs --outdir=dist/test",
     "test:metrics": "npm run build:test:renderer && node test/metrics-export-test.js",
     "test": "npm run build:test && electron test/electron-transcribe-test.js",
@@ -25,22 +35,40 @@
     "test:ipc": "npm run build && npm run build:test && electron test/electron-ipc-test.js",
     "test:audio": "npm run build && npm run build:test && electron test/electron-audio-test.js",
     "test:live": "npm run build:test && electron test/electron-live-test.js",
+    "test:transcript": "npm run build && npm run build:test && electron test/electron-transcript-cache-test.js",
+    "test:layout": "npm run build && npm run build:test && electron test/electron-layout-test.js",
+    "test:onboarding": "npm run build && npm run build:test && electron test/electron-onboarding-test.js",
+    "test:position": "npm run build && npm run build:test && electron test/electron-window-position-test.js",
+    "test:widget": "npm run build && npm run build:test && electron test/electron-widget-test.js",
+    "test:delete": "npm run build && npm run build:test && electron test/electron-delete-test.js",
     "test:e2e": "npm run build && npm run build:test && electron test/electron-live-e2e-test.js",
-    "test:all": "npm run test:metrics && npm run test:capture && npm run test:recorder && npm run test:ipc && npm run test:audio && npm test && npm run test:live && npm run test:e2e && npm run test:diarize",
+    "test:all": "npm run test:metrics && npm run test:capture && npm run test:recorder && npm run test:ipc && npm run test:audio && npm test && npm run test:live && npm run test:e2e && npm run test:transcript && npm run test:layout && npm run test:onboarding && npm run test:position && npm run test:widget && npm run test:delete && npm run test:diarize",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder"
   },
   "build": {
     "appId": "com.miniscribe.app",
     "productName": "Miniscribe",
+    "icon": "assets/icon.png",
+    "electronLanguages": [
+      "en-US"
+    ],
     "directories": {
-      "output": "dist/installers"
+      "output": "release"
     },
     "files": [
-      "dist/**/*",
+      "dist/main.js",
+      "dist/preload.js",
+      "dist/asr-worker.js",
+      "dist/renderer.js",
+      "dist/renderer.css",
+      "dist/capture-worklet.js",
+      "src/renderer/index.html",
+      "assets/**/*",
       "package.json"
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis"
       ]
@@ -49,9 +77,11 @@
       "oneClick": true,
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "Miniscribe"
     },
     "mac": {
+      "icon": "assets/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -66,6 +96,9 @@
         "NSMicrophoneUsageDescription": "Miniscribe records your microphone so it can transcribe your side of the meeting on your device."
       }
     },
+    "linux": {
+      "icon": "assets/icons"
+    },
     "publish": {
       "provider": "github",
       "releaseType": "draft"
@@ -75,26 +108,32 @@
     "theme": "@astryxdesign/theme-neutral"
   },
   "devDependencies": {
-    "@types/node": "^22.5.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "electron": "^43.3.0",
-    "electron-builder": "^25.1.8",
-    "esbuild": "^0.23.1",
-    "typescript": "^5.6.2"
-  },
-  "comments": {
-    "sherpa-onnx-node": "PINNED EXACT, do not add a caret. 1.13.5 declares an optional dep on sherpa-onnx-darwin-arm64@^1.13.5, which is not published (404). Optional deps fail silently, so on Apple Silicon the install looks clean and then require() throws at runtime. Revisit once darwin-arm64 catches up."
-  },
-  "dependencies": {
     "@astryxdesign/cli": "^0.3.0",
     "@astryxdesign/core": "^0.3.0",
     "@astryxdesign/theme-neutral": "^0.3.0",
     "@stylexjs/stylex": "^0.19.0",
-    "electron-updater": "^6.3.9",
+    "@types/node": "^22.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "esbuild": "^0.28.2",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "typescript": "^5.6.2",
+    "typescript-eslint": "^8.67.0"
+  },
+  "comments": {
+    "build.electronLanguages": "Chromium ships ~50 locale .pak files, about 45MB, and the app is English-only: the Whisper builds in MODEL_CATALOG are the .en variants and the recognizer is constructed with language 'en'. Shipping translations for a UI that only speaks English is weight for nothing. Revisit the moment the UI gets localized - this is the line that has to grow first, or the new language will render as missing glyphs in the packaged build only, which is a miserable thing to debug.",
+    "dependencies": "Only what is require()d from disk at runtime lives here, which is exactly the two modules esbuild marks external: the native ASR addon and the updater. Everything renderer-side - React, the design system, the icons - is bundled into dist/renderer.js at build time, so shipping it in node_modules too meant carrying ~42MB of the same code twice. electron-builder packages production dependencies only, so listing them as dev is what keeps them out of the installer. If you ever mark something external in an esbuild command, it has to move back up here.",
+    "build.files": "Named individually rather than dist/**/*. The output directory used to live at dist/installers - inside the glob that collected the app - so every build packaged the previous build's installer and the asar grew by hundreds of megabytes each time (566MB of a 632MB asar was old output). Output now lives in release/, outside dist/, and the bundles are listed explicitly so a new artifact in dist/ cannot silently ship. The test-only bundles (ipc.js, transcription.js, recorder.js, updater.js, window-sizes.js) stay out; main.js already inlines all of them.",
+    "sherpa-onnx-node": "PINNED EXACT, do not add a caret. 1.13.5 declares an optional dep on sherpa-onnx-darwin-arm64@^1.13.5, which is not published (404). Optional deps fail silently, so on Apple Silicon the install looks clean and then require() throws at runtime. Revisit once darwin-arm64 catches up."
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
     "sherpa-onnx-node": "1.13.4"
   }
 }

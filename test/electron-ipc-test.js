@@ -13,8 +13,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
+// Points userData at a throwaway dir with the repo's models linked in. Must come
+// before anything reads a model path — see the file for why.
+require('./user-data');
 const sherpa = require('sherpa-onnx-node');
 const { registerIpc } = require('../dist/ipc.js');
+const { registerUpdater } = require('../dist/updater.js');
 
 const CHUNK = 2048;
 const CHUNKS = 8;
@@ -30,7 +34,11 @@ const script = `(async () => {
     window.api.recorderChunk('me', s);
   }
   const out = await window.api.recorderStop();
-  return { dir, out, apiKeys: Object.keys(window.api).sort() };
+  // The updater in a dev run: it must answer, and answer that it cannot check,
+  // rather than throwing at whoever opens Settings.
+  const updater = await window.api.updaterState();
+  const afterCheck = await window.api.updaterCheck();
+  return { dir, out, updater, afterCheck, apiKeys: Object.keys(window.api).sort() };
 })()`;
 
 // The whole bridge surface, sorted. A key that vanishes from preload without
@@ -47,16 +55,23 @@ const EXPECTED_API = [
   'onLiveError',
   'onLiveUtterance',
   'onModelProgress',
+  'onUpdaterChanged',
   'onWindowModeChanged',
   'recorderChunk',
   'recorderStart',
   'recorderStop',
   'recordingsAudio',
+  'recordingsDelete',
   'recordingsLabels',
   'recordingsList',
   'recordingsSetLabels',
   'recordingsTranscribe',
+  'recordingsTranscript',
   'transcribeFiles',
+  'updaterCheck',
+  'updaterDownload',
+  'updaterInstall',
+  'updaterState',
   'windowClose',
   'windowMinimize',
   'windowSetAlwaysOnTop',
@@ -71,8 +86,9 @@ const EXPECTED_API = [
 // so without it the test hangs instead of failing.
 try {
   registerIpc();
+  registerUpdater();
 } catch (e) {
-  console.error(`RESULT: FAIL — registerIpc threw before app ready: ${e.message}`);
+  console.error(`RESULT: FAIL — registration threw before app ready: ${e.message}`);
   process.exit(1);
 }
 
@@ -90,6 +106,9 @@ app.whenReady().then(async () => {
       backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
+      // Matches the app (see src/main.ts): the renderer this exercises is a
+      // sandboxed one, so the preload bridge is tested as it actually ships.
+      sandbox: true,
     },
   });
 
@@ -106,6 +125,20 @@ app.whenReady().then(async () => {
     }
     if (res.out.length !== 1 || res.out[0].kind !== 'me') {
       fails.push(`recorderStop returned ${JSON.stringify(res.out)}`);
+    }
+
+    console.log(
+      `[test] updater: ${res.updater.stage} v${res.updater.currentVersion} ` +
+        `-> after check: ${res.afterCheck.stage}`,
+    );
+    if (!res.updater.currentVersion) fails.push('updater reports no current version');
+    // An unpacked run has no feed to ask; saying so is the correct answer, and
+    // the one the Settings panel renders instead of a broken check.
+    if (res.updater.stage !== 'unsupported') {
+      fails.push(`updater stage is "${res.updater.stage}" in a dev run, expected "unsupported"`);
+    }
+    if (res.afterCheck.stage !== 'unsupported') {
+      fails.push(`checking in a dev run left stage "${res.afterCheck.stage}"`);
     }
 
     if (res.out.length > 0) {

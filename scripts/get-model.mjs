@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -32,7 +32,9 @@ async function download(url, dest) {
 async function extract(archive, dir) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      execSync(`tar -xf "${archive}" -C "${dir}"`, { stdio: 'inherit' });
+      // execFileSync: argv straight to tar, so a path containing a quote or a
+      // space is passed correctly rather than reinterpreted by a shell.
+      execFileSync('tar', ['-xf', archive, '-C', dir], { stdio: 'inherit' });
       return;
     } catch (e) {
       if (attempt === 2) throw e;

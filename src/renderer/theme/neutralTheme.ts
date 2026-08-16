@@ -57,112 +57,75 @@ const neutralSyntax = defineSyntaxTheme({
 export const neutralTheme = defineTheme({
   name: 'neutral',
 
-  // Typography: Nunito across body, heading, and display sizes (display size
-  // tokens inherit from heading.family) — rounded terminals read as friendly
-  // without costing legibility at transcript size, which a script or display
-  // face would. Self-hosted in ../fonts.css; naming a family here does NOT
-  // load it. Monospace stays as the platform default for code.
-  // Scale: base=14, ratio=1.2. Bold weights on h3/h4 for subsection hierarchy.
+  // Typography: Hanken Grotesk for headings, Inter for body, JetBrains Mono for code & metadata.
   typography: {
-    scale: {base: 14, ratio: 1.2},
+    scale: {base: 16, ratio: 1.25},
     body: {
-      family: 'Nunito',
+      family: 'Inter',
       fallbacks:
         '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     },
     heading: {
-      family: 'Nunito',
+      family: 'Hanken Grotesk',
       fallbacks:
         '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-      weights: {3: 'bold', 4: 'bold'},
+      weights: {1: 'bold', 2: '600', 3: '600', 4: '600'},
     },
     code: {
-      family: 'ui-monospace',
+      family: 'JetBrains Mono',
       fallbacks:
-        '"SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        'ui-monospace, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     },
   },
 
-  // Motion: snappier than default to match shadcn/Tailwind conventions.
-  // Produces: fast-min=95ms, fast=125ms, fast-max=165ms,
-  //           medium-min=225ms, medium=300ms, medium-max=400ms.
+  // Motion: snappier than default to match Corporate Modern responsiveness conventions.
   motion: {fast: 125, medium: 300, slow: 700, ratio: 0.75},
 
   syntax: neutralSyntax,
 
   tokens: {
     // =========================================================================
-    // Core — pure grayscale spine (Tailwind neutral)
-    // 50:#fafafa 100:#f5f5f5 200:#e5e5e5 300:#d4d4d4 400:#a3a3a3
-    // 500:#737373 600:#525252 700:#404040 800:#262626 900:#171717 950:#0a0a0a
+    // Mini Scribe Design System Tokens
+    // Palette: Deep Navy (#0F172A), Action Blue (#0051d5 / #316bf3), Light Tint (#f8f9ff)
     // =========================================================================
+    '--color-background-surface': ['#f8f9ff', '#0b1c30'],
+    '--color-background-body': ['#f8f9ff', '#0b1c30'],
+    '--color-background-card': ['#ffffff', '#131b2e'],
+    '--color-background-popover': ['#ffffff', '#131b2e'],
+    '--color-background-muted': ['#eff4ff', '#1c283d'],
 
-    // =========================================================================
-    // Backgrounds — Figma-style flat with a single lifted surface.
-    //
-    // Dark mode collapses card / popover / muted to body T10. Cards and
-    // popovers lift purely via shadow + inset highlight (see --shadow-*
-    // below) — they don't need a distinct tone.
-    //
-    // Surface is the exception: it's tonally LIGHTER than body (T15) so
-    // interactive components that sit on top of body have a clear,
-    // differentiated foreground. Real consumers of --color-background-surface
-    // are: switches, radios, checkboxes, multi-selectors, dialogs, app
-    // shells, sections — all things that need to lift above the canvas.
-    //
-    //   surface  T15 #262626  — interactive surfaces lifted above body
-    //   body     T10 #1b1b1b  — main canvas
-    //   card     T10 #1b1b1b  — same as body, lifts via --shadow-low
-    //   popover  T10 #1b1b1b  — same as body, lifts via --shadow-med
-    //   muted    T10 #1b1b1b  — same as body
-    //
-    // Light mode keeps the standard ladder (white surfaces float on tinted
-    // body; shadows do most of the lifting):
-    //   surface  T100 #ffffff
-    //   body     T95  #f1f1f1
-    //   card     T100 #ffffff
-    //   popover  T100 #ffffff
-    //   muted    T95  #f1f1f1
-    //
-    // All values use the OKLCH Neutral tonal palette (chroma=0).
-    // =========================================================================
-    '--color-background-surface': ['#ffffff', '#262626'],
-    '--color-background-body': ['#f1f1f1', '#1b1b1b'],
-    '--color-background-card': ['#ffffff', '#1b1b1b'],
-    '--color-background-popover': ['#ffffff', '#1b1b1b'],
-    '--color-background-muted': ['#f1f1f1', '#1b1b1b'],
-
-    // Accent + neutral surface tints (sit alongside backgrounds)
-    '--color-accent': ['#262626', '#ebebeb'],
-    '--color-accent-muted': ['#f1f1f1', '#262626'],
+    // Accent + neutral surface tints (Action Blue #0051d5 / #316bf3)
+    '--color-accent': ['#0051d5', '#316bf3'],
+    '--color-accent-muted': ['#e5eeff', '#1c283d'],
     '--color-neutral': ['#0000000F', '#FFFFFF1A'],
 
-    // Overlays (modal scrims, hover/pressed tints)
+    // Overlays
     '--color-overlay': ['#00000080', '#000000CC'],
     '--color-overlay-hover': ['#0000000D', '#FFFFFF0D'],
     '--color-overlay-pressed': ['#0000001A', '#FFFFFF1A'],
 
-    // Text
-    '--color-text-primary': ['#171717', '#fafafa'],
-    // Light secondary is neutral-600 (#525252), not 500 (#737373): 500 only
-    // reaches 4.19:1 on the T95 body (#f1f1f1), just under WCAG AA 4.5:1.
-    // 600 clears it (6.9:1 on body, 7.8:1 on card). Dark stays neutral-400.
-    '--color-text-secondary': ['#525252', '#a3a3a3'],
-    '--color-text-disabled': ['#a3a3a3', '#525252'],
-    '--color-text-accent': ['#262626', '#ebebeb'],
+    // Text (on-surface: #0b1c30, on-surface-variant: #45464d)
+    '--color-text-primary': ['#0b1c30', '#f8f9ff'],
+    '--color-text-secondary': ['#45464d', '#aec1df'],
+    '--color-text-disabled': ['#76777d', '#7185a6'],
+    '--color-text-accent': ['#0051d5', '#316bf3'],
     '--color-on-dark': '#ffffff',
-    '--color-on-light': '#171717',
-    // Contrast: neutral accent is near-black (L) / near-white (D)
-    '--color-on-accent': ['#ffffff', '#171717'],
-    '--color-on-success': ['#ffffff', '#171717'],
-    '--color-on-error': ['#ffffff', '#171717'],
-    '--color-on-warning': '#171717',
+    '--color-on-light': '#0b1c30',
+    '--color-on-accent': ['#ffffff', '#ffffff'],
+    '--color-on-success': ['#ffffff', '#0b1c30'],
+    '--color-on-error': ['#ffffff', '#ffffff'],
+    '--color-on-warning': '#0b1c30',
 
     // Icon
-    '--color-icon-accent': ['#262626', '#ebebeb'],
-    '--color-icon-primary': ['#171717', '#fafafa'],
-    '--color-icon-secondary': ['#737373', '#a3a3a3'],
-    '--color-icon-disabled': ['#a3a3a3', '#525252'],
+    '--color-icon-accent': ['#0051d5', '#316bf3'],
+    '--color-icon-primary': ['#0b1c30', '#f8f9ff'],
+    '--color-icon-secondary': ['#45464d', '#aec1df'],
+    '--color-icon-disabled': ['#76777d', '#7185a6'],
+
+    // Border
+    '--color-border': ['#c6c6cd', '#2b3b55'],
+    '--color-border-emphasized': ['#76777d', '#455879'],
+
 
     // Status / Sentiment — dark mode follows the issue #2150 rubric:
     //
@@ -191,21 +154,13 @@ export const neutralTheme = defineTheme({
     //   slots (palette T70). Composited onto body #1b1b1b, the effective
     //   bg luminance hits ~1.65-1.70:1 vs body — visible colored surface
     //   without the heaviness of a solid T20 panel.
+    // Status / Sentiment
     '--color-success': ['#007004', '#9fe59b'],
-    '--color-error': ['#a50c25', '#ffc6c1'],
+    '--color-error': ['#ba1a1a', '#ffdad6'],
     '--color-warning': ['#745b00', '#fdcf4f'],
     '--color-success-muted': ['#c5e5c0', '#84c9803D'],
-    '--color-error-muted': ['#facecb', '#ff9e973D'],
+    '--color-error-muted': ['#ffdad6', '#93000a'],
     '--color-warning-muted': ['#f8da9d', '#deb4333D'],
-
-    // Border
-    '--color-border': ['#00000014', '#FFFFFF1A'],
-    '--color-border-emphasized': ['#d4d4d4', '#525252'],
-
-    // Effects
-    '--color-skeleton': ['#ebebeb', '#525252'],
-    '--color-shadow': ['#0000001A', '#0000004D'],
-    '--color-tint-hover': ['black', 'white'],
 
     // =========================================================================
     // Categorical — light mode uses pastel surfaces + dark colored text;
@@ -309,74 +264,63 @@ export const neutralTheme = defineTheme({
     '--color-text-pink': ['#83004b', '#ffc3da'],
 
     // Gray (categorical neutral, chroma 0)
-    //   Light: #e5e5e5 (Neutral 200) so it's visibly distinct from the
-    //          lighter body / muted surface (both #f5f5f5).
-    //   Dark : var(--color-neutral) — semi-transparent white wash
-    //          (#FFFFFF1A, 10%). Matches the same treatment the gray
-    //          badge uses; clearly distinct from the body T10 #1b1b1b
-    //          while staying chroma-0 neutral. Solid T15 #1c1c1c was
-    //          indistinguishable from --color-background-muted.
     '--color-background-gray': ['#e5e5e5', 'var(--color-neutral)'],
-    '--color-border-gray': ['#d4d4d4', '#262626'],
-    '--color-icon-gray': ['#525252', '#a3a3a3'],
-    '--color-text-gray': ['#262626', '#e5e5e5'],
+    '--color-border-gray': ['#c6c6cd', '#45464d'],
+    '--color-icon-gray': ['#45464d', '#bec6e0'],
+    '--color-text-gray': ['#0b1c30', '#f8f9ff'],
+
+    // Effects
+    '--color-skeleton': ['#eff4ff', '#131b2e'],
+    '--color-shadow': ['#0f172a0d', '#0000004D'],
+    '--color-tint-hover': ['#0051d5', '#316bf3'],
 
     // =========================================================================
-    // Radius — slightly larger than default (kept as-is)
+    // Mini Scribe Radius Tokens
+    // sm: 0.125rem, DEFAULT: 0.25rem, md: 0.375rem, lg: 0.5rem, xl: 0.75rem, full: 9999px
     // =========================================================================
-    '--radius-none': '0.25rem',
-    '--radius-inner': '0.375rem',
-    '--radius-element': '0.625rem',
-    '--radius-container': '0.75rem',
-    '--radius-page': '1.75rem',
+    '--radius-none': '0.125rem',
+    '--radius-inner': '0.25rem',
+    '--radius-element': '0.375rem',
+    '--radius-container': '0.5rem',
+    '--radius-page': '0.75rem',
     '--radius-full': '9999px',
 
     // =========================================================================
-    // Shadows
-    //
-    // Light mode: matches origin/main exactly (5%/10% low+med, 10%/15% high).
-    // Subtle drops; light surfaces don't need rim highlights.
-    //
-    // Dark mode: deepened drops + an all-around 1px white inset that wraps
-    // every edge ("Figma-style bezel"). The inset mimics ambient light
-    // catching the surface's rim on every side, giving cards/popovers/modals
-    // a substantial "lit from above" feel that drop shadows alone can't
-    // achieve against a dark canvas.
-    //   low  :  drops 25%/40% + 8%  white all-around inset
-    //   med  :  drops 35%/50% + 12% white all-around inset
-    //   high :  drops 50%/70% + 15% white all-around inset
-    //
-    // The inset layer uses light-dark(transparent, ...) so light mode is
-    // unaffected — main's exact light values are preserved.
+    // Shadows - Low contrast outline (Level 1), Soft high-diffusion (Level 2)
     // =========================================================================
     '--shadow-low':
-      '0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 25%)), ' +
-      '0 4px 8px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 40%)), ' +
-      'inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 8%))',
+      '0 1px 3px light-dark(rgba(15, 23, 42, 0.04), rgba(0, 0, 0, 0.25)), ' +
+      'inset 0 0 0 1px light-dark(#c6c6cd, rgba(255, 255, 255, 0.1))',
     '--shadow-med':
-      '0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 35%)), ' +
-      '0 4px 12px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)), ' +
-      'inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 12%))',
+      '0 4px 20px light-dark(rgba(15, 23, 42, 0.05), rgba(0, 0, 0, 0.35)), ' +
+      'inset 0 0 0 1px light-dark(#c6c6cd, rgba(255, 255, 255, 0.12))',
     '--shadow-high':
-      '0 4px 6px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)), ' +
-      '0 12px 24px light-dark(oklch(0 0 0 / 15%), oklch(0 0 0 / 70%)), ' +
-      'inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 15%))',
-    '--shadow-inset-hover': 'inset 0px 0px 0px 2px #0074e24D',
-    '--shadow-inset-selected': 'inset 0px 0px 0px 2px #0074e280',
+      '0 8px 30px light-dark(rgba(15, 23, 42, 0.08), rgba(0, 0, 0, 0.5)), ' +
+      'inset 0 0 0 1px light-dark(#c6c6cd, rgba(255, 255, 255, 0.15))',
+    '--shadow-inset-hover': 'inset 0px 0px 0px 2px #0051d54D',
+    '--shadow-inset-selected': 'inset 0px 0px 0px 2px #0051d580',
     '--shadow-inset-success': 'inset 0px 0px 0px 2px #1981004D',
     '--shadow-inset-warning': 'inset 0px 0px 0px 2px #ffce2f4D',
-    '--shadow-inset-error': 'inset 0px 0px 0px 2px #e33f4a4D',
+    '--shadow-inset-error': 'inset 0px 0px 0px 2px #ba1a1a4D',
   },
 
   components: {
     // =========================================================================
-    // Button — primary gets white text, secondary gets a border, destructive
-    // uses the OKLCH red filled treatment.
+    // Button — Primary (Record/Action) gets Action Blue bg + pill shape.
     // =========================================================================
     button: {
+      'variant:primary': {
+        backgroundColor: 'light-dark(#0051d5, #316bf3)',
+        color: '#ffffff',
+        borderRadius: '9999px',
+      },
+      'variant:secondary': {
+        backgroundColor: 'light-dark(#316bf3, #0051d5)',
+        color: '#ffffff',
+      },
       'variant:destructive': {
-        backgroundColor: 'var(--color-error-muted)', // locked pastel red bg
-        color: 'var(--color-error)', // locked T30 red — matches banner/input error text
+        backgroundColor: 'var(--color-error-muted)',
+        color: 'var(--color-error)',
       },
     },
 

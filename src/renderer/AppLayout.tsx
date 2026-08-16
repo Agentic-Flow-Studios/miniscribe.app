@@ -3,7 +3,6 @@ import { Button } from '@astryxdesign/core/Button';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Icon } from '@astryxdesign/core/Icon';
 import { IconButton } from '@astryxdesign/core/IconButton';
-import { NavIcon } from '@astryxdesign/core/NavIcon';
 import {
   SideNav,
   SideNavHeading,
@@ -11,10 +10,10 @@ import {
   SideNavSection,
 } from '@astryxdesign/core/SideNav';
 import { VStack } from '@astryxdesign/core/VStack';
-import { ExternalLink, ListMusic, Mic, Minus, Settings, X } from 'lucide-react';
+import { Cpu, ExternalLink, ListMusic, Mic, Minus, Settings, X } from 'lucide-react';
 import { BrandCredit, FlowMark } from './Branding';
 
-export type NavPage = 'recordings' | 'recording';
+export type NavPage = 'recordings' | 'recording' | 'settings';
 
 interface AppLayoutProps {
   /** Which nav item reads as current. The recording detail lives under Recordings. */
@@ -22,6 +21,7 @@ interface AppLayoutProps {
   /** True while a recording or a transcription job is in flight. */
   isBusy: boolean;
   onGoToRecordings: () => void;
+  onGoToSettings: () => void;
   onNewRecording: () => void;
   onOpenModelsModal: () => void;
   onSwitchToMiniMode: () => void;
@@ -43,6 +43,7 @@ export function AppLayout({
   activePage,
   isBusy,
   onGoToRecordings,
+  onGoToSettings,
   onNewRecording,
   onOpenModelsModal,
   onSwitchToMiniMode,
@@ -56,39 +57,51 @@ export function AppLayout({
       variant="elevated"
       contentPadding={0}
       sideNav={
-        <SideNav
-          header={
-            <SideNavHeading
-              heading="Miniscribe"
-              subheading="Local meeting capture"
-              icon={<NavIcon icon={<FlowMark size={16} />} />}
-            />
-          }
-          footer={
-            <VStack gap={3}>
-              <Button
-                label="Record"
-                icon={<Icon icon={Mic} />}
-                variant="primary"
-                width="100%"
-                isDisabled={isBusy}
-                clickAction={onNewRecording}
-                tooltip="Set up a new recording — pick your sources, then start it"
+        <div style={{ width: '280px', height: '100%', backgroundColor: 'var(--color-background-card)', borderRight: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}>
+          <SideNav
+            header={
+              <SideNavHeading
+                heading="Miniscribe"
+                subheading="Local meeting capture"
+                icon={<FlowMark size={48} withTile={true} />}
               />
-              <BrandCredit />
-            </VStack>
-          }
-        >
-          <SideNavSection title="Main" isHeaderHidden>
-            <SideNavItem
-              label="Recordings"
-              icon={ListMusic}
-              isSelected={activePage === 'recordings' || activePage === 'recording'}
-              onClick={onGoToRecordings}
-            />
-            <SideNavItem label="Settings" icon={Settings} onClick={onOpenModelsModal} />
-          </SideNavSection>
-        </SideNav>
+            }
+            footer={
+              <VStack gap={3}>
+                <Button
+                  label="Record"
+                  icon={<Icon icon={Mic} />}
+                  variant="primary"
+                  width="100%"
+                  isDisabled={isBusy}
+                  clickAction={onNewRecording}
+                  tooltip="Opens the mini widget, where recording starts"
+                  style={{ borderRadius: '9999px', backgroundColor: '#0051d5', color: '#ffffff' }}
+                />
+                <BrandCredit />
+              </VStack>
+            }
+          >
+            <SideNavSection title="Main" isHeaderHidden>
+              <SideNavItem
+                label="Recordings"
+                icon={ListMusic}
+                isSelected={activePage === 'recordings' || activePage === 'recording'}
+                onClick={onGoToRecordings}
+              />
+              <SideNavItem
+                label="Settings"
+                icon={Settings}
+                isSelected={activePage === 'settings'}
+                onClick={onGoToSettings}
+              />
+              {/* The mini widget reaches this modal through its own triple-dot
+                  menu; without an item here, the full window had no path to
+                  it at all. */}
+              <SideNavItem label="Speech Models" icon={Cpu} onClick={onOpenModelsModal} />
+            </SideNavSection>
+          </SideNav>
+        </div>
       }
     >
       <VStack height="100%" minHeight={0} gap={0}>

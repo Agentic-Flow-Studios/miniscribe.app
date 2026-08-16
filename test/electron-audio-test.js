@@ -22,6 +22,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
+// Points userData at a throwaway dir with the repo's models linked in. Must come
+// before anything reads a model path — see the file for why.
+require('./user-data');
 const { registerIpc } = require('../dist/ipc.js');
 
 const SAMPLE_RATE = 16000;
@@ -117,6 +120,9 @@ app.whenReady().then(async () => {
       preload: path.join(__dirname, '..', 'dist', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Matches the app (see src/main.ts): the renderer this exercises is a
+      // sandboxed one, so the preload bridge is tested as it actually ships.
+      sandbox: true,
     },
   });
 

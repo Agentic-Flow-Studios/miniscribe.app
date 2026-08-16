@@ -2,7 +2,12 @@ import { app, BrowserWindow, dialog, ipcMain, utilityProcess, type UtilityProces
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { transcribeFiles, resetRecognizer, type TrackFile } from './transcription';
+import {
+  transcribeFiles,
+  resetRecognizer,
+  type TrackFile,
+  type TranscriptSegment,
+} from './transcription';
 import { WavWriter, wavHeader, SAMPLE_RATE } from './recorder';
 import type { TrackKind } from './capture-types';
 import type { WorkerIn, WorkerOut } from './asr-worker';
@@ -12,7 +17,10 @@ import {
   deleteModel,
   saveSettings,
   MODEL_CATALOG,
+  USER_DATA_ENV,
 } from './model-manager';
+import { MAIN_HEIGHT, MAIN_WIDTH, MINI_HEIGHT } from './window-sizes';
+import { placeMain, placeMini } from './window-position';
 
 // Split out of main.ts so tests can register the same handlers against their own
 // BrowserWindow without also spawning the app's real window.
@@ -20,6 +28,17 @@ import {
 const recorders = new Map<TrackKind, WavWriter>();
 let sessionDir: string | null = null;
 let client: WebContents | null = null;
+
+// main.ts owns the tray icon and wants to know when it should switch to the
+// recording glyph; this module owns the only two moments that answer that
+// (recorder:start / recorder:stop). A callback rather than an import keeps
+// the dependency pointing the way it already does — main.ts depends on
+// ipc.ts, not back — so ipc.ts still bundles standalone for the test suites
+// (see the note above) without pulling in main.ts's Tray/BrowserWindow.
+let onRecordingChange: ((recording: boolean) => void) | null = null;
+export function onRecordingChanged(cb: (recording: boolean) => void): void {
+  onRecordingChange = cb;
+}
 
 const TRACK_KINDS: TrackKind[] = ['me', 'them'];
 
@@ -82,6 +101,87 @@ function readLabels(dir: string): Record<string, string> {
   }
 }
 
+// --- Transcript on disk ---------------------------------------------------
+// The live pass already produced a transcript while the meeting ran; storing it
+// beside the audio is what makes reopening a recording instant. Without it,
+// "open" meant "decode the whole meeting again" — minutes of CPU to redisplay
+// text the app had already written once, and a blank panel until it finished.
+//
+// The WAVs remain the source of truth: this file can be deleted, corrupted or
+// simply absent (recordings made before it existed), and every reader falls
+// back to transcribing the audio again.
+
+const TRANSCRIPT_FILE = 'transcript.json';
+const TRANSCRIPT_VERSION = 1;
+
+/** How the stored segments were produced. */
+export type TranscriptSource = 'live' | 'rerun';
+
+export interface StoredTranscript {
+  version: number;
+  savedAt: string;
+  source: TranscriptSource;
+  segments: TranscriptSegment[];
+}
+
+function isSegment(v: unknown): v is TranscriptSegment {
+  if (!v || typeof v !== 'object') return false;
+  const s = v as Record<string, unknown>;
+  return (
+    typeof s.start === 'number' &&
+    typeof s.end === 'number' &&
+    typeof s.speaker === 'string' &&
+    typeof s.text === 'string'
+  );
+}
+
+function readTranscript(dir: string): StoredTranscript | null {
+  const file = path.join(dir, TRANSCRIPT_FILE);
+  if (!fs.existsSync(file)) return null;
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    const stored = parsed as Partial<StoredTranscript>;
+    if (!Array.isArray(stored.segments)) return null;
+    return {
+      version: typeof stored.version === 'number' ? stored.version : TRANSCRIPT_VERSION,
+      savedAt: typeof stored.savedAt === 'string' ? stored.savedAt : '',
+      source: stored.source === 'rerun' ? 'rerun' : 'live',
+      // Per-word times are optional: a segment without them still reads, it just
+      // cannot highlight along with playback.
+      segments: stored.segments
+        .filter(isSegment)
+        .map((s) => ({ ...s, words: Array.isArray(s.words) ? s.words : [] })),
+    };
+  } catch (err) {
+    // A half-written file costs a re-run, not the recording.
+    console.warn(`[recordings] ignoring unreadable ${TRANSCRIPT_FILE} in ${dir}:`, err);
+    return null;
+  }
+}
+
+function writeTranscript(
+  dir: string,
+  segments: TranscriptSegment[],
+  source: TranscriptSource,
+): void {
+  const stored: StoredTranscript = {
+    version: TRANSCRIPT_VERSION,
+    savedAt: new Date().toISOString(),
+    source,
+    // Chronological on disk. The live pass emits per track as each side stops
+    // speaking, so arrival order interleaves rather than reads.
+    segments: [...segments].sort((a, b) => a.start - b.start),
+  };
+  try {
+    fs.writeFileSync(path.join(dir, TRANSCRIPT_FILE), JSON.stringify(stored));
+  } catch (err) {
+    // Losing the cache must not lose the recording: the audio is already closed
+    // and the transcript is still on screen.
+    console.error(`[recordings] could not save ${TRANSCRIPT_FILE} in ${dir}:`, err);
+  }
+}
+
 // --- Playback audio -------------------------------------------------------
 // The two tracks are one timeline recorded twice, so following a transcript
 // means hearing them together. They are summed into a single `mix.wav` beside
@@ -97,7 +197,16 @@ function readPcm(file: string): Int16Array {
   if (buf.length <= 44) return new Int16Array(0);
   const frames = (buf.length - 44) >> 1;
   const out = new Int16Array(frames);
-  for (let i = 0; i < frames; i++) out[i] = buf.readInt16LE(44 + i * 2);
+  // One native memcpy into out's own backing store, rather than one
+  // readInt16LE call per sample — the difference between a bulk copy and
+  // ~43M individual bounds-checked calls for a 45-minute meeting, which is
+  // what the first playback of a long recording was paying to build its mix.
+  // Safe on every platform this app ships to (Windows/macOS/Linux desktops
+  // are all little-endian), the same assumption the WAV writer already makes
+  // in recorder.ts's writeInt16LE.
+  Buffer.from(out.buffer, out.byteOffset, out.byteLength).set(
+    buf.subarray(44, 44 + frames * 2),
+  );
   return out;
 }
 
@@ -174,6 +283,10 @@ function listRecordings(): RecordingSummary[] {
 
 let asr: UtilityProcess | null = null;
 let onFlushed: (() => void) | null = null;
+// Every utterance of the session being recorded, kept on this side as well as
+// sent on. The renderer's copy dies with its page; this is the copy that gets
+// written beside the audio when the session stops.
+let liveSegments: TranscriptSegment[] = [];
 
 function send(msg: WorkerIn): void {
   asr?.postMessage(msg);
@@ -181,10 +294,26 @@ function send(msg: WorkerIn): void {
 
 function ensureAsr(): UtilityProcess {
   if (asr) return asr;
-  const proc = utilityProcess.fork(path.join(__dirname, 'asr-worker.js'));
+  // The worker has no `app` of its own, so it is told where userData is rather
+  // than left to guess from the working directory. Both sides then read the
+  // same models directory and the same settings file.
+  const proc = utilityProcess.fork(path.join(__dirname, 'asr-worker.js'), [], {
+    env: { ...process.env, [USER_DATA_ENV]: app.getPath('userData') },
+  });
   proc.on('message', (msg: WorkerOut) => {
     switch (msg.type) {
       case 'utterance':
+        // Kept for the transcript file — but only while a session owns a
+        // directory to write it to.
+        if (sessionDir) {
+          liveSegments.push({
+            start: msg.start,
+            end: msg.end,
+            speaker: msg.kind === 'me' ? 'Me' : 'Them',
+            text: msg.text,
+            words: msg.words,
+          });
+        }
         // Straight through to the renderer, which appends it to its column.
         client?.send('live:utterance', msg);
         break;
@@ -211,9 +340,63 @@ function ensureAsr(): UtilityProcess {
     // Unblock a pending stop rather than hanging on a worker that died.
     onFlushed?.();
     onFlushed = null;
+    onExited?.();
+    onExited = null;
   });
   asr = proc;
   return proc;
+}
+
+let onExited: (() => void) | null = null;
+
+/**
+ * Stop the worker and wait for the process to be gone.
+ *
+ * The recognizer is a native ONNX session holding the model files open, and
+ * nothing in the addon's API disposes one — dropping the JS reference leaks it
+ * and keeps the handles. Ending the process is the only thing that reliably
+ * gives the files back, which is what deleting a model needs on Windows, where
+ * an open handle makes the unlink fail outright.
+ */
+async function stopAsr(): Promise<void> {
+  const proc = asr;
+  if (!proc) return;
+  const exited = new Promise<void>((resolve) => {
+    onExited = resolve;
+    // Never hang the IPC call on a worker that will not die.
+    setTimeout(resolve, 3000).unref?.();
+  });
+  proc.kill();
+  await exited;
+  asr = null;
+}
+
+/**
+ * Reload the ASR model in the worker.
+ *
+ * The worker caches its recognizer for the life of the process, so a model
+ * downloaded, deleted or made active in main changed nothing about live
+ * transcription until the app was restarted: the user picked Whisper, hit
+ * record, and got Parakeet. Restarting the worker is what makes the choice take
+ * effect, and it costs one model load — which is what switching models costs
+ * anyway.
+ */
+async function restartAsr(): Promise<void> {
+  await stopAsr();
+  ensureAsr();
+  send({ type: 'warmup' });
+}
+
+/**
+ * Model changes restart the worker, and the worker IS the live transcript, so
+ * doing one mid-meeting would silently stop transcribing a recording that is
+ * still running. Refusing is the honest answer; the alternative is a recording
+ * with a hole in it that nobody notices until it is over.
+ */
+function refuseWhileRecording(action: string): void {
+  if (sessionDir) {
+    throw new Error(`Stop the recording before ${action}.`);
+  }
 }
 
 export function registerIpc(): void {
@@ -238,8 +421,10 @@ export function registerIpc(): void {
     sessionDir = path.join(recordingsRoot(), stamp);
     fs.mkdirSync(sessionDir, { recursive: true });
     recorders.clear();
+    liveSegments = [];
     ensureAsr();
     send({ type: 'reset' });
+    onRecordingChange?.(true);
     return sessionDir;
   });
 
@@ -270,7 +455,14 @@ export function registerIpc(): void {
       return { kind, path: w.filePath, seconds: w.seconds };
     });
     recorders.clear();
+
+    // The flush above is what makes this complete rather than merely current:
+    // every utterance the worker had in hand has arrived by now. Reopening this
+    // recording later reads this file instead of decoding the audio again.
+    if (sessionDir && out.length > 0) writeTranscript(sessionDir, liveSegments, 'live');
+    liveSegments = [];
     sessionDir = null;
+    onRecordingChange?.(false);
     return out;
   });
 
@@ -298,9 +490,38 @@ export function registerIpc(): void {
             },
       );
       if (tracks.length === 0) throw new Error(`Recording ${id} has no audio`);
-      return transcribeFiles(tracks);
+      const segments = transcribeFiles(tracks);
+      // A re-run replaces whatever was stored: it was asked for because the
+      // stored pass was not what the user wanted (no speaker separation, or a
+      // different model since).
+      writeTranscript(dir, segments, 'rerun');
+      return segments;
     },
   );
+
+  // The transcript saved when this recording was made, or null if there is
+  // none — an older recording, or a session that never reached a clean stop.
+  // Callers fall back to `recordings:transcribe`, which saves what it produces.
+  ipcMain.handle('recordings:transcript', (_evt, id: string) =>
+    readTranscript(recordingDir(id)),
+  );
+
+  // Delete a recording, audio and all. Resolved from an id under the recordings
+  // root like every other path here, so this cannot be aimed elsewhere.
+  ipcMain.handle('recordings:delete', (_evt, id: string) => {
+    const dir = recordingDir(id);
+    // Refusing beats racing: the WAV writers hold this directory open, and a
+    // half-deleted session in progress would keep receiving chunks.
+    if (sessionDir && path.resolve(sessionDir) === path.resolve(dir)) {
+      throw new Error('That recording is still being recorded.');
+    }
+    // Retries because the renderer's <audio> element may still be letting go of
+    // mix.wav: on Windows an open handle makes the unlink fail outright, and the
+    // release lands a tick or two after the page drops the source.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 });
+    // The fresh listing, so the caller never has to ask a second time.
+    return listRecordings();
+  });
 
   // --- Speaker names -------------------------------------------------------
 
@@ -370,7 +591,26 @@ export function registerIpc(): void {
   // Full re-transcription from the WAVs written above — only worth running when
   // diarization is on, since cluster labels aren't stable until the whole track
   // has been seen. Otherwise the live output already IS the transcript.
+  //
+  // This is the one handler in the file that takes a path instead of an id: the
+  // renderer's normal route is recordings:transcribe by id (below), and this is
+  // only the fallback for the rare case where the session directory name could
+  // not be read back after recorder:stop (see use-session.ts). The paths it is
+  // ever actually called with are ones main itself just handed back to the
+  // renderer moments earlier — recorder:stop returns each WavWriter's own
+  // filePath — so every legitimate call already resolves under
+  // recordingsRoot(). Enforcing that here, rather than trusting the renderer to
+  // keep echoing it back honestly, is what keeps this handler from being a
+  // "run ASR over any WAV on disk and return the text" primitive sitting next
+  // to a file of handlers that otherwise never accept one.
   ipcMain.handle('transcribe-files', async (_evt, tracks: TrackFile[]) => {
+    const root = path.resolve(recordingsRoot());
+    for (const t of tracks) {
+      const resolved = path.resolve(t.path);
+      if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+        throw new Error(`Refusing to transcribe a path outside recordings: ${t.path}`);
+      }
+    }
     return transcribeFiles(tracks);
   });
 
@@ -381,12 +621,14 @@ export function registerIpc(): void {
     if (!win) return;
     if (mode === 'mini') {
       win.setAlwaysOnTop(true, 'screen-saver');
-      win.setSize(440, 76);
       win.setResizable(false);
+      // Moves as well as resizes: see window-position.ts for why the top-left
+      // corner is the wrong thing to keep across a mode change.
+      placeMini(win);
     } else {
       win.setAlwaysOnTop(false);
       win.setResizable(true);
-      win.setSize(1020, 740);
+      placeMain(win, MAIN_WIDTH, MAIN_HEIGHT);
     }
   });
 
@@ -394,7 +636,7 @@ export function registerIpc(): void {
     const win = BrowserWindow.fromWebContents(evt.sender);
     if (!win) return;
     const bounds = win.getBounds();
-    const COLLAPSED_HEIGHT = 76;
+    const COLLAPSED_HEIGHT = MINI_HEIGHT;
     // Panels differ in height — a device list with meters is much taller than a
     // delay menu — so the renderer says how much room it needs. Clamped, since
     // that number crosses a process boundary and must not be trusted to be sane.
@@ -441,21 +683,36 @@ export function registerIpc(): void {
 
   ipcMain.handle('models:catalog', () => MODEL_CATALOG);
 
+  // Each of these changes which model should be loaded, so each has to reach
+  // BOTH recognizers: the one in this process (batch re-transcription) and the
+  // one the worker holds (live transcription). resetRecognizer() only covers
+  // the first; restartAsr() is what covers the second.
+
   ipcMain.handle('models:download', async (evt, modelId: string) => {
+    refuseWhileRecording('downloading a model');
     await downloadModel(modelId, evt.sender);
     resetRecognizer();
+    await restartAsr();
     return listModelStatuses();
   });
 
-  ipcMain.handle('models:delete', (_evt, modelId: string) => {
-    deleteModel(modelId);
+  ipcMain.handle('models:delete', async (_evt, modelId: string) => {
+    refuseWhileRecording('deleting a model');
+    // Order matters: the worker has the model's files open, and on Windows the
+    // directory cannot be removed until it lets go. Stop it, delete, then come
+    // back up on whatever model is left.
+    await stopAsr();
     resetRecognizer();
+    deleteModel(modelId);
+    await restartAsr();
     return listModelStatuses();
   });
 
-  ipcMain.handle('models:set-active', (_evt, modelId: string) => {
+  ipcMain.handle('models:set-active', async (_evt, modelId: string) => {
+    refuseWhileRecording('switching models');
     saveSettings({ activeModelId: modelId });
     resetRecognizer();
+    await restartAsr();
     return listModelStatuses();
   });
 }

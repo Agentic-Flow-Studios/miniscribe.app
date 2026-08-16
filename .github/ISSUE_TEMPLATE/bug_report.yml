@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in Miniscribe isn't working right.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. If this is a **security
+        vulnerability** (an IPC hole, a way to escape the sandbox, anything
+        that reads/writes outside a recording's own folder), please don't
+        file it here — see [SECURITY.md](../../SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected instead, too, if it's not obvious.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a recording with mic + system audio
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Miniscribe version
+      description: Help → About, or the installer filename you downloaded.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Other / built from source
+    validations:
+      required: true
+  - type: dropdown
+    id: model
+    attributes:
+      label: Active speech model
+      description: Settings → Speech Models. Leave blank if the bug isn't ASR-related.
+      options:
+        - Parakeet TDT 0.6B
+        - Whisper Base (.en)
+        - Whisper Small (.en)
+        - Not sure / not applicable
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >-
+        If you built from source, anything printed to the terminal by
+        `npm start` is the most useful thing you can paste here.
+      render: shell

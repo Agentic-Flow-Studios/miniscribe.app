@@ -1,0 +1,55 @@
+# Dependabot version updates.
+#
+# This file controls only the SCHEDULED updates — the "your dependency is a
+# version behind" pull requests. The other half of Dependabot, the security
+# alerts and the automatic fix PRs that follow a CVE, is a repository setting
+# rather than a file: GitHub → Settings → Code security. On a public repo the
+# alerts are on by default; "Dependabot security updates" has to be turned on
+# once by hand, and is worth turning on, because it is the half that reacts to a
+# critical advisory the day it lands instead of on the next Monday.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # One PR per group rather than one per package. The build toolchain moves
+    # constantly and separate PRs for each bump means a queue nobody reads —
+    # which is how a real security PR ends up buried.
+    groups:
+      dev-toolchain:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-minor:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Pinned exact on purpose; see the "comments" field in package.json.
+      # 1.13.5 declares an optional dep on an unpublished darwin-arm64 package,
+      # so the install looks clean on Apple Silicon and then require() throws at
+      # runtime. Dependabot would reopen this bump every week otherwise.
+      - dependency-name: sherpa-onnx-node
+      # Electron majors carry Chromium and Node majors with them, so they are a
+      # deliberate migration with a round of device testing, never a merge.
+      # Security fixes still arrive through Dependabot alerts.
+      - dependency-name: electron
+        update-types:
+          - version-update:semver-major
+
+  # The workflows pin actions by major (actions/checkout@v4). Nothing tells you
+  # when v5 lands unless something is watching.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - '*'

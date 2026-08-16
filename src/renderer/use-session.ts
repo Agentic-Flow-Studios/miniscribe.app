@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AudioChunk, TrackKind } from '../capture-types';
 import { SAMPLE_RATE, WebCaptureSource } from './capture';
+import type { UpdateState } from './use-updater';
 
 /** One word and the moment it starts, in seconds from the start of recording. */
 export interface Word {
@@ -31,6 +32,24 @@ interface TrackFile {
   numSpeakers?: number;
 }
 
+/** How a transcript was produced: streamed while recording, or a later re-run. */
+export type TranscriptSource = 'live' | 'rerun';
+
+/** The transcript stored beside a recording's audio. */
+interface StoredTranscript {
+  version: number;
+  savedAt: string;
+  source: TranscriptSource;
+  segments: TranscriptSegment[];
+}
+
+/** Where the transcript on screen came from. Null when there isn't one. */
+export interface TranscriptInfo {
+  source: TranscriptSource;
+  /** ISO stamp of when it was saved; empty if the file predates the field. */
+  savedAt: string;
+}
+
 interface RecordedTrack {
   kind: TrackKind;
   path: string;
@@ -53,6 +72,8 @@ declare global {
         id: string,
         opts: { diarize: boolean; numSpeakers: number },
       ) => Promise<TranscriptSegment[]>;
+      recordingsTranscript: (id: string) => Promise<StoredTranscript | null>;
+      recordingsDelete: (id: string) => Promise<Recording[]>;
       recordingsLabels: (id: string) => Promise<Record<string, string>>;
       recordingsSetLabels: (id: string, labels: Record<string, string>) => Promise<void>;
       /** Both tracks summed into one playable file, as a file:// URL. */
@@ -78,6 +99,11 @@ declare global {
       onModelProgress: (
         cb: (progress: { id: string; progressPct: number; downloadSpeedMb: number }) => void,
       ) => void;
+      updaterState: () => Promise<UpdateState>;
+      updaterCheck: () => Promise<UpdateState>;
+      updaterDownload: () => Promise<UpdateState>;
+      updaterInstall: () => Promise<UpdateState>;
+      onUpdaterChanged: (cb: (state: UpdateState) => void) => void;
     };
   }
 }
@@ -139,6 +165,15 @@ export interface StopOptions {
   numSpeakers: number;
 }
 
+export interface OpenOptions extends StopOptions {
+  /**
+   * Whether a recording with no saved transcript may be transcribed on the
+   * spot. False when no speech model is installed: the attempt could only fail,
+   * and an error where the transcript goes says nothing about what to do next.
+   */
+  canTranscribe?: boolean;
+}
+
 interface TrackStats {
   frames: number;
   peak: number;
@@ -146,6 +181,13 @@ interface TrackStats {
 }
 
 const TRACKS: TrackKind[] = ['me', 'them'];
+
+/**
+ * Nothing happening. Where the session sits whenever it is not capturing or
+ * working — reading a saved transcript is not a session state, so opening one
+ * leaves the machine here and reports itself through `notice` instead.
+ */
+const IDLE: { kind: StatusKind; text: string } = { kind: 'idle', text: 'Ready to record.' };
 
 const emptyStats = (): Record<TrackKind, TrackStats> => ({
   me: { frames: 0, peak: 0, sumSq: 0 },
@@ -157,6 +199,8 @@ export interface Session {
   /** Capture diagnostics from the last run: silent tracks, dropped audio. */
   warnings: string[];
   isRecording: boolean;
+  /** Recording, but not writing: the devices stay open and the clock stops. */
+  isPaused: boolean;
   isBusy: boolean;
   /** Tracks that actually opened; drives which meters and columns are live. */
   openTracks: TrackKind[];
@@ -171,12 +215,36 @@ export interface Session {
    * while recording, and until the first session of the run has been stopped.
    */
   loadedRecording: string | null;
+  /** Where the transcript on screen came from, for the header line above it. */
+  transcriptInfo: TranscriptInfo | null;
   /** User-supplied names, keyed by raw speaker id. Persisted per recording. */
   speakerLabels: Record<string, string>;
   /** Name a speaker; an empty name restores the raw id. */
   renameSpeaker: (speaker: string, name: string) => void;
   refreshRecordings: () => Promise<void>;
-  openRecording: (id: string, opts: StopOptions) => Promise<void>;
+  /** Show a past recording: its saved transcript, or a fresh pass if it has none. */
+  openRecording: (id: string, opts: OpenOptions) => Promise<void>;
+  /** Run ASR over the loaded recording again, replacing its saved transcript. */
+  retranscribe: (opts: StopOptions) => Promise<void>;
+  /** Delete a recording and its audio. Irreversible; confirm before calling. */
+  deleteRecording: (id: string) => Promise<void>;
+  /**
+   * The outcome of the last action taken on the LIBRARY, for the page that
+   * action happened on.
+   *
+   * Deliberately not `status`: that one describes the recording session, and
+   * the widget puts it on screen — which is how "Recording deleted." ended up
+   * sitting in the recorder, where nothing had been deleted.
+   */
+  notice: { ok: boolean; text: string } | null;
+  /** Report an outcome. Successes fade after a few seconds; failures wait. */
+  notify: (ok: boolean, text: string) => void;
+  dismissNotice: () => void;
+  /**
+   * Seconds of audio actually captured this session, sampled rather than
+   * rendered: paused time is not in it, because paused audio is not on disk.
+   */
+  recordedSeconds: React.RefObject<number>;
   /**
    * Live peak per track, mutated in place by the capture callback. Deliberately
    * a ref and not state: meters repaint every animation frame, and routing that
@@ -186,13 +254,16 @@ export interface Session {
   /** Clear the panel back to an empty, unstarted session. */
   newSession: () => void;
   start: (opts: StartOptions) => Promise<void>;
+  /** Stop writing without ending the session; resume picks up where it left off. */
+  setPaused: (paused: boolean) => void;
   stop: (opts: StopOptions) => Promise<void>;
 }
 
 export function useSession(): Session {
-  const [status, setStatus] = useState<Session['status']>({ kind: 'idle', text: 'Miniscribe ready.' });
+  const [status, setStatus] = useState<Session['status']>(IDLE);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [openTracks, setOpenTracks] = useState<TrackKind[]>([]);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
@@ -202,10 +273,20 @@ export function useSession(): Session {
   });
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loadedRecording, setLoadedRecording] = useState<string | null>(null);
+  const [transcriptInfo, setTranscriptInfo] = useState<TranscriptInfo | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [speakerLabels, setSpeakerLabels] = useState<Record<string, string>>({});
 
   const source = useRef<WebCaptureSource | null>(null);
+  // A ref, not the state: the capture callback runs off the audio thread's
+  // messages and must read the CURRENT answer, not the one captured when it
+  // was last rendered.
+  const paused = useRef(false);
   const levels = useRef<Record<TrackKind, number>>({ me: 0, them: 0 });
+  // Seconds of audio on the longest track. A ref for the same reason levels is
+  // one: a timer ticking in React state would re-render the whole app every
+  // second, transcript included.
+  const recordedSeconds = useRef(0);
   // Total frames the capture thread never delivered, per track. Non-zero means the
   // timeline had holes, which were padded with silence to keep timestamps honest.
   const gaps = useRef<Record<TrackKind, number>>({ me: 0, them: 0 });
@@ -317,8 +398,19 @@ export function useSession(): Session {
   }, [appendLine, refreshRecordings]);
 
   const onChunk = useCallback((chunk: AudioChunk): void => {
+    // Paused: the devices stay open — reopening a microphone mid-meeting is how
+    // you lose the next sentence — but nothing is written and nothing is
+    // transcribed. Dropping the audio here rather than at the source keeps the
+    // WAV and the ASR clock identical: both only ever see what was kept, so a
+    // ten-minute pause leaves no ten-minute hole in the timestamps.
+    if (paused.current) return;
     const st = stats.current[chunk.kind];
     st.frames += chunk.samples.length;
+    // Frames kept, not wall time: paused chunks never arrive here, so this
+    // counts the audio that actually exists — which is what a recording timer
+    // is claiming to show.
+    const secs = st.frames / SAMPLE_RATE;
+    if (secs > recordedSeconds.current) recordedSeconds.current = secs;
     if (chunk.peak > st.peak) st.peak = chunk.peak;
     for (let i = 0; i < chunk.samples.length; i++) {
       st.sumSq += chunk.samples[i] * chunk.samples[i];
@@ -359,9 +451,25 @@ export function useSession(): Session {
 
   const teardown = useCallback(() => {
     setIsRecording(false);
+    paused.current = false;
+    setIsPaused(false);
     setOpenTracks([]);
     setActivity({ me: 'idle', them: 'idle' });
     levels.current = { me: 0, them: 0 };
+  }, []);
+
+  const setPaused = useCallback((next: boolean): void => {
+    paused.current = next;
+    setIsPaused(next);
+    // Meters read this ref every frame; without the reset they would hold the
+    // last peak from before the pause and read as live input.
+    if (next) levels.current = { me: 0, them: 0 };
+    setStatus({
+      kind: 'recording',
+      text: next
+        ? 'Paused — nothing is being recorded or transcribed.'
+        : 'Recording — lines appear as each side stops speaking.',
+    });
   }, []);
 
   /**
@@ -378,14 +486,18 @@ export function useSession(): Session {
     setActivity({ me: 'idle', them: 'idle' });
     showLoaded(null);
     showLabels({});
-    setStatus({ kind: 'idle', text: 'Ready to record.' });
+    setTranscriptInfo(null);
+    setStatus(IDLE);
   }, [isRecording, showLabels, showLoaded]);
 
   const start = useCallback(
     async (opts: StartOptions): Promise<void> => {
       gaps.current = { me: 0, them: 0 };
       stats.current = emptyStats();
+      recordedSeconds.current = 0;
       lineCount.current = 0;
+      paused.current = false;
+      setIsPaused(false);
       setLines([]);
       setWarnings([]);
       setActivity({ me: 'idle', them: 'idle' });
@@ -394,6 +506,7 @@ export function useSession(): Session {
       // playable either. Names belong to a recording, so they go with it.
       showLoaded(null);
       showLabels({});
+      setTranscriptInfo(null);
 
       const want: TrackKind[] = [];
       if (opts.mic) want.push('me');
@@ -494,6 +607,11 @@ export function useSession(): Session {
           }
         }
 
+        // Whatever happens next, the live pass has already been written beside
+        // the audio by recorderStop — so this recording opens instantly from
+        // here on, even if the diarization pass below is cancelled or fails.
+        setTranscriptInfo({ source: 'live', savedAt: new Date().toISOString() });
+
         if (!opts.diarize) {
           // The live output already is the transcript — nothing to re-run.
           setStatus({
@@ -519,8 +637,17 @@ export function useSession(): Session {
         );
 
         const t0 = performance.now();
-        const segments = await window.api.transcribeFiles(tracks);
+        // By id wherever we have one, so main writes the diarized pass over the
+        // live transcript it saved a moment ago; the path-based call is only for
+        // the case where the session directory name could not be read back.
+        const segments = sessionId.current
+          ? await window.api.recordingsTranscribe(sessionId.current, {
+              diarize: true,
+              numSpeakers: opts.numSpeakers,
+            })
+          : await window.api.transcribeFiles(tracks);
         showSegments(segments);
+        setTranscriptInfo({ source: 'rerun', savedAt: new Date().toISOString() });
         const rtf = (performance.now() - t0) / 1000 / audioSecs;
         setStatus({
           kind: 'done',
@@ -539,45 +666,156 @@ export function useSession(): Session {
     [diagnose, refreshRecordings, showLoaded, showSegments, teardown],
   );
 
-  const openRecording = useCallback(
+  // A full pass over a recording's WAVs. Minutes of CPU for a long meeting, so
+  // it only ever runs when asked for or when there is no saved transcript to
+  // show. Main saves whatever it produces, so it runs once per request.
+  const transcribeRecording = useCallback(
     async (id: string, opts: StopOptions): Promise<void> => {
+      setStatus({
+        kind: 'working',
+        text: opts.diarize
+          ? 'Transcribing with speaker separation… (slower)'
+          : 'Transcribing this recording…',
+      });
+      const t0 = performance.now();
+      const segments = await window.api.recordingsTranscribe(id, opts);
+      showSegments(segments);
+      setTranscriptInfo({ source: 'rerun', savedAt: new Date().toISOString() });
+      const elapsed = (performance.now() - t0) / 1000;
+      setStatus(IDLE);
+      setNotice({
+        ok: true,
+        text: `${segments.length} utterances, transcribed in ${elapsed.toFixed(1)}s.`,
+      });
+    },
+    [showSegments],
+  );
+
+  const openRecording = useCallback(
+    async (id: string, opts: OpenOptions): Promise<void> => {
       setIsBusy(true);
       showLoaded(id);
       setLines([]);
       setWarnings([]);
-      // Names first: they are a single small file, and having them in hand
-      // before the segments land means no line ever renders under a cluster id
-      // and then renames itself a moment later.
-      showLabels(
-        await window.api.recordingsLabels(id).catch((err) => {
-          console.error('[labels] load failed', err);
-          return {};
-        }),
-      );
-      setStatus({
-        kind: 'working',
-        text: opts.diarize
-          ? 'Re-transcribing with speaker separation… (slower)'
-          : 'Re-transcribing this recording…',
-      });
-      const t0 = performance.now();
+      setTranscriptInfo(null);
+      setNotice(null);
+      // Whatever the last session was saying — an ASR failure, a finished run —
+      // it was about a different recording than the one being opened. Reading
+      // from the library is not a session state, so the machine goes quiet.
+      setStatus(IDLE);
       try {
-        const segments = await window.api.recordingsTranscribe(id, opts);
-        showSegments(segments);
-        const elapsed = (performance.now() - t0) / 1000;
-        setStatus({
-          kind: 'done',
-          text: `${segments.length} utterances, re-transcribed in ${elapsed.toFixed(1)}s.`,
+        // Names first: they are a single small file, and having them in hand
+        // before the segments land means no line ever renders under a cluster id
+        // and then renames itself a moment later.
+        showLabels(
+          await window.api.recordingsLabels(id).catch((err) => {
+            console.error('[labels] load failed', err);
+            return {};
+          }),
+        );
+
+        // The transcript this recording was saved with. Reading it is a file
+        // read, so the panel fills immediately — re-running ASR here would make
+        // opening a meeting cost as much as recording it, to arrive at the same
+        // words. Re-running stays available, as a deliberate act.
+        const saved = await window.api.recordingsTranscript(id).catch((err) => {
+          console.error('[transcript] load failed', err);
+          return null;
         });
+
+        if (saved && saved.segments.length > 0) {
+          showSegments(saved.segments);
+          setTranscriptInfo({ source: saved.source, savedAt: saved.savedAt });
+          setNotice({
+            ok: true,
+            text: `${saved.segments.length} utterances from the saved transcript.`,
+          });
+          return;
+        }
+
+        if (opts.canTranscribe === false) {
+          // Nothing saved and nothing that can be run: say what is missing,
+          // where the page can offer the fix, instead of failing a pass that
+          // never had a model to use.
+          setNotice({
+            ok: false,
+            text: 'No transcript yet — install a speech model to transcribe this recording.',
+          });
+          return;
+        }
+
+        // No transcript on disk: a recording made before they were saved, or a
+        // session that never reached a clean stop. Decode it once — main stores
+        // the result, so this is the last time this recording pays for it.
+        await transcribeRecording(id, opts);
       } catch (err) {
         showLoaded(null);
-        setStatus({ kind: 'error', text: `Error: ${(err as Error).message}` });
+        setNotice({ ok: false, text: `Could not open that recording: ${(err as Error).message}` });
       } finally {
         setIsBusy(false);
       }
     },
-    [showLabels, showLoaded, showSegments],
+    [showLabels, showLoaded, showSegments, transcribeRecording],
   );
+
+  const retranscribe = useCallback(
+    async (opts: StopOptions): Promise<void> => {
+      const id = loadedRef.current;
+      if (!id || isRecording) return;
+      setIsBusy(true);
+      try {
+        // Lines are left standing until the new ones land: the old transcript is
+        // still the best reading of this meeting until a better one exists.
+        await transcribeRecording(id, opts);
+      } catch (err) {
+        setStatus(IDLE);
+        setNotice({ ok: false, text: `Could not transcribe: ${(err as Error).message}` });
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [isRecording, transcribeRecording],
+  );
+
+  const deleteRecording = useCallback(
+    async (id: string): Promise<void> => {
+      if (isRecording) return;
+      // Let go of it on screen FIRST. The player has mix.wav open, and on
+      // Windows a file with a live handle cannot be unlinked at all — so the
+      // panel has to release it before main tries, not after.
+      if (loadedRef.current === id) {
+        setLines([]);
+        setWarnings([]);
+        showLoaded(null);
+        showLabels({});
+        setTranscriptInfo(null);
+      }
+      try {
+        setRecordings(await window.api.recordingsDelete(id));
+        setNotice({ ok: true, text: 'Recording deleted.' });
+      } catch (err) {
+        setNotice({ ok: false, text: `Could not delete: ${(err as Error).message}` });
+        // The list is the thing the user is looking at; put it back in step with
+        // the disk whether or not the delete landed.
+        void refreshRecordings();
+      }
+    },
+    [isRecording, refreshRecordings, showLabels, showLoaded],
+  );
+
+  const dismissNotice = useCallback(() => setNotice(null), []);
+
+  /** Report the outcome of an action the user took, on the page they took it. */
+  const notify = useCallback((ok: boolean, text: string) => setNotice({ ok, text }), []);
+
+  // Successes clear themselves; failures stay until dismissed, because they are
+  // the ones that need doing something about. Here rather than in each page, so
+  // every surface that shows a notice agrees on how long it lives.
+  useEffect(() => {
+    if (!notice || !notice.ok) return;
+    const timer = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const startSafely = useCallback(
     async (opts: StartOptions): Promise<void> => {
@@ -598,19 +836,28 @@ export function useSession(): Session {
     status,
     warnings,
     isRecording,
+    isPaused,
     isBusy,
     openTracks,
     activity,
     lines,
     recordings,
     loadedRecording,
+    transcriptInfo,
     speakerLabels,
     renameSpeaker,
     refreshRecordings,
     openRecording,
+    retranscribe,
+    deleteRecording,
+    notice,
+    notify,
+    dismissNotice,
     levels,
+    recordedSeconds,
     newSession,
     start: startSafely,
+    setPaused,
     stop,
   };
 }

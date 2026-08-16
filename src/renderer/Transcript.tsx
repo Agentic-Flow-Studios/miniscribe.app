@@ -55,6 +55,40 @@ const TRACKS: TrackKind[] = ['me', 'them'];
 // that the whole layout exists to provide.
 const STICKY: React.CSSProperties = { position: 'sticky', insetBlockStart: 0, zIndex: 1 };
 
+/** Nearest ancestor that is actually scrolling, or null if nothing is. */
+function scrollBoxOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const overflowY = getComputedStyle(p).overflowY;
+    if (
+      (overflowY === 'auto' || overflowY === 'scroll') &&
+      p.scrollHeight > p.clientHeight
+    ) {
+      return p;
+    }
+  }
+  return null;
+}
+
+/**
+ * Centre a line in the transcript's own scroll box — and in nothing else.
+ *
+ * scrollIntoView would do the centring, and would also scroll every scrollable
+ * ancestor to bring the element into view. In a page whose canvas can scroll,
+ * that dragged the player, the insights panel and the toolbar up off the top
+ * while the audio ran: the transcript followed along, but so did the rest of
+ * the page. Moving one element's scrollTop can only ever move that element.
+ */
+function centreInScrollBox(el: HTMLElement): void {
+  const box = scrollBoxOf(el);
+  if (!box) return;
+  const line = el.getBoundingClientRect();
+  const frame = box.getBoundingClientRect();
+  const delta = line.top - frame.top - (box.clientHeight - line.height) / 2;
+  // A whole-pixel no-op still costs a smooth-scroll animation.
+  if (Math.abs(delta) < 1) return;
+  box.scrollBy({ top: delta, behavior: 'smooth' });
+}
+
 function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
@@ -71,22 +105,23 @@ function fmtTime(sec: number): string {
  */
 function SpokenText({ line, activeWord }: { line: TranscriptLine; activeWord: number }): React.ReactNode {
   const words = useMemo(() => wordsOf(line), [line]);
-  if (words.length === 0) return <Text textWrap="pretty">{line.text}</Text>;
+  if (words.length === 0) return <span className="text-body-lg">{line.text}</span>;
 
   return (
-    <Text textWrap="pretty">
+    <span className="text-body-lg">
       {words.map((word, i) => (
-        <Text
+        <span
           key={`${i}:${word.t}`}
-          type="inherit"
-          color={i < activeWord ? 'primary' : i === activeWord ? 'accent' : 'disabled'}
-          weight={i === activeWord ? 'semibold' : undefined}
+          style={{
+            color: i < activeWord ? 'var(--color-text-primary)' : i === activeWord ? 'var(--color-accent)' : 'var(--color-text-disabled)',
+            fontWeight: i === activeWord ? 600 : 400,
+          }}
         >
           {i > 0 ? ' ' : ''}
           {word.text}
-        </Text>
+        </span>
       ))}
-    </Text>
+    </span>
   );
 }
 
@@ -105,45 +140,52 @@ function LineCell({ line, isActive, activeWord, isPlaying, onPlayFrom }: CellPro
   // Follow the audio. Only on becoming active, so scrolling is one move per
   // turn rather than a fight with every frame of the clock.
   useEffect(() => {
-    if (isActive) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (isActive && ref.current) centreInScrollBox(ref.current);
   }, [isActive]);
 
   return (
-    <Item
-      ref={ref}
-      // Test hook for the live e2e run: it reads the timestamp and text back off
-      // this row to prove an utterance decoded in the worker reached the column.
-      data-testid={`line-${line.kind}`}
-      data-active={isActive ? 'true' : undefined}
-      density="compact"
-      align="start"
-      isSelected={isActive}
-      onClick={onPlayFrom ? () => onPlayFrom(line) : undefined}
-      startContent={
-        <HStack width={36} hAlign="end">
-          <Text type="supporting" color="secondary" hasTabularNumbers>
-            {fmtTime(line.start)}
-          </Text>
-        </HStack>
-      }
-      endContent={
-        onPlayFrom ? (
-          <Icon
-            icon={isActive && isPlaying ? Square : Play}
-            size="xsm"
-            color={isActive ? 'accent' : 'tertiary'}
-            label={isActive && isPlaying ? 'Playing' : 'Play from here'}
-          />
-        ) : undefined
-      }
-      label={
-        isActive ? (
-          <SpokenText line={line} activeWord={activeWord} />
-        ) : (
-          <Text textWrap="pretty">{line.text}</Text>
-        )
-      }
-    />
+    <div
+      style={{
+        backgroundColor: isActive ? 'rgba(0, 81, 213, 0.05)' : 'transparent',
+        borderLeft: isActive ? '3px solid #0051d5' : '3px solid transparent',
+        transition: 'background-color 0.15s ease',
+        borderRadius: '4px',
+      }}
+    >
+      <Item
+        ref={ref}
+        data-testid={`line-${line.kind}`}
+        data-active={isActive ? 'true' : undefined}
+        density="compact"
+        align="start"
+        isSelected={isActive}
+        onClick={onPlayFrom ? () => onPlayFrom(line) : undefined}
+        startContent={
+          <HStack width={44} hAlign="end">
+            <span className="text-label-md" style={{ color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtTime(line.start)}
+            </span>
+          </HStack>
+        }
+        endContent={
+          onPlayFrom ? (
+            <Icon
+              icon={isActive && isPlaying ? Square : Play}
+              size="xsm"
+              color={isActive ? 'accent' : 'tertiary'}
+              label={isActive && isPlaying ? 'Playing' : 'Play from here'}
+            />
+          ) : undefined
+        }
+        label={
+          isActive ? (
+            <SpokenText line={line} activeWord={activeWord} />
+          ) : (
+            <span className="text-body-lg">{line.text}</span>
+          )
+        }
+      />
+    </div>
   );
 }
 

@@ -1,8 +1,9 @@
 import { app, type WebContents } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
-import { Readable } from 'node:stream';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 export type ModelType = 'nemo_transducer' | 'whisper';
@@ -16,6 +17,22 @@ export interface ModelSpec {
   downloadUrl: string;
   archiveName: string;
   folderName: string;
+  /**
+   * SHA-256 of the downloaded file, lowercase hex.
+   *
+   * These are hundreds of megabytes of neural network that the app then loads
+   * and executes, fetched from a release host this project does not control.
+   * TLS proves who served the bytes, not that they are the bytes this build was
+   * written against — so the hash is checked before anything is extracted.
+   *
+   * The URLs point at immutable release assets, so a hash only ever changes
+   * when an entry in this catalog changes, which is a code edit already. Run
+   * `npm run hash-models` to print the current values.
+   *
+   * Optional so a catalog entry can be added before its hash is known; an entry
+   * without one downloads unverified and says so in the log.
+   */
+  sha256?: string;
 }
 
 export const MODEL_CATALOG: ModelSpec[] = [
@@ -70,17 +87,30 @@ export interface AppSettings {
 let activeClient: WebContents | null = null;
 let currentDownloadingModelId: string | null = null;
 
+/**
+ * Where main tells the ASR worker to look. The worker runs in a utilityProcess,
+ * and `require('electron')` there exposes only `net` and `systemPreferences` —
+ * there is no `app` to ask for userData. Left to guess, it falls back to the
+ * working directory, which in a packaged app is the install folder: main
+ * downloads a model to userData and the worker then reports no model installed.
+ * So main passes its own answer down in the environment when it forks.
+ */
+export const USER_DATA_ENV = 'MINISCRIBE_USER_DATA';
+
+/** The one directory both processes must agree on. */
+function userDataDir(): string {
+  if (app) return app.getPath('userData');
+  return process.env[USER_DATA_ENV] || process.cwd();
+}
+
 export function getModelsDir(): string {
-  // Store in app userData/models (or fallback to root/models in dev test if app not ready)
-  const base = app ? app.getPath('userData') : process.cwd();
-  const dir = path.join(base, 'models');
+  const dir = path.join(userDataDir(), 'models');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
 function getSettingsFile(): string {
-  const base = app ? app.getPath('userData') : process.cwd();
-  return path.join(base, 'settings.json');
+  return path.join(userDataDir(), 'settings.json');
 }
 
 export function loadSettings(): AppSettings {
@@ -120,10 +150,14 @@ export function listModelStatuses(): ModelStatus[] {
   }));
 }
 
+// execFileSync, not execSync: the archive path contains the user's home
+// directory, so building a shell command string out of it means a quote or a
+// backtick in an account name lands in a shell. This form passes argv straight
+// to tar with no shell in between, and needs no quoting to be correct.
 async function extractArchive(archivePath: string, destDir: string): Promise<void> {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      execSync(`tar -xf "${archivePath}" -C "${destDir}"`, { stdio: 'ignore' });
+      execFileSync('tar', ['-xf', archivePath, '-C', destDir], { stdio: 'ignore' });
       return;
     } catch (e) {
       if (attempt === 2) throw e;
@@ -132,10 +166,14 @@ async function extractArchive(archivePath: string, destDir: string): Promise<voi
   }
 }
 
+/** How often progress crosses IPC, at most. */
+const PROGRESS_INTERVAL_MS = 250;
+
 export async function downloadFileWithProgress(
   url: string,
   destPath: string,
   onProgress: (bytesReceived: number, totalBytes: number, speedMbps: number) => void,
+  expectedSha256?: string,
 ): Promise<void> {
   const res = await fetch(url);
   if (!res.ok || !res.body) {
@@ -145,31 +183,58 @@ export async function downloadFileWithProgress(
   const contentLength = res.headers.get('content-length');
   const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
 
-  const out = fs.createWriteStream(destPath);
+  const hash = crypto.createHash('sha256');
+  const startTime = Date.now();
   let bytesReceived = 0;
-  let startTime = Date.now();
+  let lastReport = 0;
 
-  const reader = res.body.getReader();
+  const report = (): void => {
+    const elapsedSec = (Date.now() - startTime) / 1000;
+    // MB/s, not Mbps — this is what the readout beside the bar is labelled.
+    const speed = elapsedSec > 0 ? bytesReceived / (1024 * 1024) / elapsedSec : 0;
+    onProgress(bytesReceived, totalBytes, Math.round(speed * 10) / 10);
+  };
 
-  async function pump(): Promise<void> {
-    const { done, value } = await reader.read();
-    if (done) {
-      out.end();
-      return;
-    }
-    if (value) {
-      bytesReceived += value.length;
-      out.write(value);
+  // Counting and hashing happen in the middle of the pipe rather than in a read
+  // loop, so backpressure is preserved end to end: a slow disk slows the socket
+  // instead of queueing the difference in memory. The previous version pushed
+  // every chunk into an unbounded write queue, which on a 600MB model meant the
+  // whole download could sit in the heap.
+  const tap = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      hash.update(chunk);
+      bytesReceived += chunk.length;
+      // Throttled: a 600MB download is tens of thousands of chunks, and a
+      // progress bar redrawing faster than the screen refreshes only costs IPC.
+      const now = Date.now();
+      if (now - lastReport >= PROGRESS_INTERVAL_MS) {
+        lastReport = now;
+        report();
+      }
+      cb(null, chunk);
+    },
+  });
 
-      const elapsedSec = (Date.now() - startTime) / 1000;
-      const speedMbps = elapsedSec > 0 ? bytesReceived / (1024 * 1024) / elapsedSec : 0;
-      onProgress(bytesReceived, totalBytes, Math.round(speedMbps * 10) / 10);
-    }
-    await pump();
+  await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), tap, fs.createWriteStream(destPath));
+  // The throttle can swallow the last update, and a bar stuck at 97% reads as a
+  // hang. Always land on the true final figure.
+  report();
+
+  const digest = hash.digest('hex');
+  if (expectedSha256 && digest !== expectedSha256.toLowerCase()) {
+    // Delete first, throw second: a file that failed verification must not be
+    // left somewhere a later run could mistake for a good download.
+    fs.rmSync(destPath, { force: true });
+    throw new Error(
+      `Checksum mismatch for ${path.basename(destPath)}.\n` +
+        `Expected ${expectedSha256.toLowerCase()}\n` +
+        `Got      ${digest}\n` +
+        'The download was discarded. Try again; if it keeps failing, report it.',
+    );
   }
-
-  await pump();
-  await new Promise((r) => setTimeout(r, 150));
+  if (!expectedSha256) {
+    console.warn(`[model-manager] no sha256 for ${path.basename(destPath)}; got ${digest}`);
+  }
 }
 
 export async function downloadModel(
@@ -199,6 +264,7 @@ export async function downloadModel(
           downloadSpeedMb: speed,
         });
       },
+      spec.sha256,
     );
 
     console.log(`[model-manager] extracting ${spec.archiveName}...`);
@@ -212,8 +278,7 @@ export async function downloadModel(
 
     console.log(`[model-manager] ${spec.name} downloaded & ready.`);
 
-    // Automatically set active if first model
-    const settings = loadSettings();
+    // A model the user just chose to download is the one they want to use.
     saveSettings({ activeModelId: modelId });
 
     currentDownloadingModelId = null;
@@ -233,40 +298,54 @@ export async function downloadModel(
   }
 }
 
+const SHERPA_RELEASES = 'https://github.com/k2-fsa/sherpa-onnx/releases/download';
+
+/**
+ * The models every ASR model needs alongside it: voice activity detection, and
+ * the segmentation + embedding pair that diarization runs on. Same integrity
+ * rule as MODEL_CATALOG — see ModelSpec.sha256.
+ */
+export const AUXILIARY_MODELS = [
+  {
+    label: 'Silero VAD',
+    url: `${SHERPA_RELEASES}/asr-models/silero_vad.onnx`,
+    /** Present when this is done: for an archive, the extracted directory. */
+    target: 'silero_vad.onnx',
+    archive: false,
+    sha256: undefined as string | undefined,
+  },
+  {
+    label: 'Pyannote segmentation',
+    url: `${SHERPA_RELEASES}/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2`,
+    target: 'sherpa-onnx-pyannote-segmentation-3-0',
+    archive: true,
+    sha256: undefined as string | undefined,
+  },
+  {
+    label: 'TitaNet speaker embedding',
+    url: `${SHERPA_RELEASES}/speaker-recongition-models/nemo_en_titanet_small.onnx`,
+    target: 'nemo_en_titanet_small.onnx',
+    archive: false,
+    sha256: undefined as string | undefined,
+  },
+];
+
 export async function ensureAuxiliaryModels(): Promise<void> {
   const dir = getModelsDir();
-  const BASE = 'https://github.com/k2-fsa/sherpa-onnx/releases/download';
 
-  // 1. Silero VAD
-  const vadPath = path.join(dir, 'silero_vad.onnx');
-  if (!fs.existsSync(vadPath)) {
-    console.log('[model-manager] downloading Silero VAD...');
-    await downloadFileWithProgress(`${BASE}/asr-models/silero_vad.onnx`, vadPath, () => {});
-  }
+  for (const m of AUXILIARY_MODELS) {
+    if (fs.existsSync(path.join(dir, m.target))) continue;
+    console.log(`[model-manager] downloading ${m.label}...`);
 
-  // 2. Pyannote Segmentation
-  const segDir = path.join(dir, 'sherpa-onnx-pyannote-segmentation-3-0');
-  if (!fs.existsSync(segDir)) {
-    console.log('[model-manager] downloading Segmentation model...');
-    const archive = path.join(dir, 'sherpa-onnx-pyannote-segmentation-3-0.tar.bz2');
-    await downloadFileWithProgress(
-      `${BASE}/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2`,
-      archive,
-      () => {},
-    );
+    if (!m.archive) {
+      await downloadFileWithProgress(m.url, path.join(dir, m.target), () => {}, m.sha256);
+      continue;
+    }
+
+    const archive = path.join(dir, path.basename(m.url));
+    await downloadFileWithProgress(m.url, archive, () => {}, m.sha256);
     await extractArchive(archive, dir);
-    if (fs.existsSync(archive)) fs.rmSync(archive);
-  }
-
-  // 3. TitaNet Embedding
-  const embPath = path.join(dir, 'nemo_en_titanet_small.onnx');
-  if (!fs.existsSync(embPath)) {
-    console.log('[model-manager] downloading TitaNet Embedding...');
-    await downloadFileWithProgress(
-      `${BASE}/speaker-recongition-models/nemo_en_titanet_small.onnx`,
-      embPath,
-      () => {},
-    );
+    if (fs.existsSync(archive)) fs.rmSync(archive, { force: true });
   }
 }
 

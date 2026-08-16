@@ -3,7 +3,6 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Icon } from '@astryxdesign/core/Icon';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
-import { Section } from '@astryxdesign/core/Section';
 import { Slider } from '@astryxdesign/core/Slider';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -145,134 +144,135 @@ export function Transport({ player, lines, speakers, labels }: Props): React.Rea
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [duration, isReady, rate, seek, setRate, skip, toUtterance, toggle, toggleMute]);
 
+  // No padding or divider of its own: the transport is collapsible content, and
+  // the panel it lives in owns the inset. Wrapping it in a second padded
+  // section here would inset the scrubber twice over.
   return (
-    <Section variant="transparent" padding={3} paddingBlock={2} dividers={['bottom']}>
-      <VStack gap={2} width="100%">
-        <SpeakerTimeline
-          lines={lines}
-          speakers={speakers}
-          labels={labels}
-          duration={duration}
-          time={time}
-          onSeek={seek}
-          isDisabled={!isReady}
-        />
+    <VStack gap={2} width="100%">
+      <SpeakerTimeline
+        lines={lines}
+        speakers={speakers}
+        labels={labels}
+        duration={duration}
+        time={time}
+        onSeek={seek}
+        isDisabled={!isReady}
+      />
 
-        <HStack gap={3} vAlign="center" hAlign="between" wrap="wrap" width="100%">
-          <HStack gap={1} vAlign="center">
-            <IconButton
-              label="Previous utterance"
-              icon={<Icon icon={SkipBack} />}
-              variant="ghost"
-              size="sm"
-              isDisabled={!isReady}
-              tooltip="Previous utterance (P)"
-              onClick={() => toUtterance(-1)}
-            />
-            <IconButton
-              label="Back 10 seconds"
-              icon={<Icon icon={Rewind} />}
-              variant="ghost"
-              size="sm"
-              isDisabled={!isReady}
-              tooltip="Back 10s (J) · arrows nudge 5s"
-              onClick={() => skip(-NUDGE)}
-            />
-            <IconButton
-              label={isPlaying ? 'Pause' : 'Play recording'}
-              icon={<Icon icon={isPlaying ? Pause : Play} />}
-              variant="primary"
-              size="sm"
-              isDisabled={!isReady}
-              isLoading={isLoading}
-              tooltip={`${isPlaying ? 'Pause' : 'Play'} (Space)`}
-              onClick={toggle}
-            />
-            <IconButton
-              label="Forward 10 seconds"
-              icon={<Icon icon={FastForward} />}
-              variant="ghost"
-              size="sm"
-              isDisabled={!isReady}
-              tooltip="Forward 10s (L)"
-              onClick={() => skip(NUDGE)}
-            />
-            <IconButton
-              label="Next utterance"
-              icon={<Icon icon={SkipForward} />}
-              variant="ghost"
-              size="sm"
-              isDisabled={!isReady}
-              tooltip="Next utterance (N)"
-              onClick={() => toUtterance(1)}
-            />
+      <HStack gap={3} vAlign="center" hAlign="between" wrap="wrap" width="100%">
+        <HStack gap={1} vAlign="center">
+          <IconButton
+            label="Previous utterance"
+            icon={<Icon icon={SkipBack} />}
+            variant="ghost"
+            size="sm"
+            isDisabled={!isReady}
+            tooltip="Previous utterance (P)"
+            onClick={() => toUtterance(-1)}
+          />
+          <IconButton
+            label="Back 10 seconds"
+            icon={<Icon icon={Rewind} />}
+            variant="ghost"
+            size="sm"
+            isDisabled={!isReady}
+            tooltip="Back 10s (J) · arrows nudge 5s"
+            onClick={() => skip(-NUDGE)}
+          />
+          <IconButton
+            label={isPlaying ? 'Pause' : 'Play recording'}
+            icon={<Icon icon={isPlaying ? Pause : Play} />}
+            variant="primary"
+            size="sm"
+            isDisabled={!isReady}
+            isLoading={isLoading}
+            tooltip={`${isPlaying ? 'Pause' : 'Play'} (Space)`}
+            onClick={toggle}
+          />
+          <IconButton
+            label="Forward 10 seconds"
+            icon={<Icon icon={FastForward} />}
+            variant="ghost"
+            size="sm"
+            isDisabled={!isReady}
+            tooltip="Forward 10s (L)"
+            onClick={() => skip(NUDGE)}
+          />
+          <IconButton
+            label="Next utterance"
+            icon={<Icon icon={SkipForward} />}
+            variant="ghost"
+            size="sm"
+            isDisabled={!isReady}
+            tooltip="Next utterance (N)"
+            onClick={() => toUtterance(1)}
+          />
 
-            <HStack gap={1} vAlign="center" paddingInline={2}>
-              <Text type="label" weight="semibold" hasTabularNumbers>
-                {fmtClock(time)}
-              </Text>
-              <Text type="supporting" color="secondary" hasTabularNumbers>
-                / {fmtClock(duration)}
-              </Text>
-              <Text type="supporting" color="disabled" hasTabularNumbers>
-                −{fmtClock(Math.max(0, duration - time))}
-              </Text>
-            </HStack>
-          </HStack>
-
-          <HStack gap={3} vAlign="center" wrap="wrap">
-            <SegmentedControl
-              label="Playback speed"
-              size="sm"
-              value={String(rate)}
-              onChange={(value) => setRate(Number(value))}
-              isDisabled={!isReady}
-            >
-              {PLAYBACK_RATES.map((option) => (
-                <SegmentedControlItem
-                  key={option}
-                  value={String(option)}
-                  label={`${option}×`}
-                />
-              ))}
-            </SegmentedControl>
-
-            <HStack gap={1} vAlign="center">
-              <IconButton
-                label={isMuted ? 'Unmute' : 'Mute'}
-                icon={<Icon icon={isMuted || volume === 0 ? VolumeX : Volume2} />}
-                variant="ghost"
-                size="sm"
-                isDisabled={!isReady}
-                tooltip={`${isMuted ? 'Unmute' : 'Mute'} (M)`}
-                onClick={toggleMute}
-              />
-              <Slider
-                label="Volume"
-                isLabelHidden
-                width={92}
-                value={isMuted ? 0 : volume}
-                min={0}
-                max={1}
-                step={0.01}
-                valueDisplay="none"
-                formatValue={(value) => `${Math.round(value * 100)}%`}
-                isDisabled={!isReady}
-                onChange={(value: number | [number, number]) =>
-                  setVolume(typeof value === 'number' ? value : value[0])
-                }
-              />
-            </HStack>
+          <HStack gap={1} vAlign="center" paddingInline={2}>
+            <span className="text-label-md" style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtClock(time)}
+            </span>
+            <span className="text-label-md" style={{ color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+              / {fmtClock(duration)}
+            </span>
+            <span className="text-label-md" style={{ color: 'var(--color-text-disabled)', fontVariantNumeric: 'tabular-nums' }}>
+              −{fmtClock(Math.max(0, duration - time))}
+            </span>
           </HStack>
         </HStack>
 
-        {error ? (
+        <HStack gap={3} vAlign="center" wrap="wrap">
+          <SegmentedControl
+            label="Playback speed"
+            size="sm"
+            value={String(rate)}
+            onChange={(value) => setRate(Number(value))}
+            isDisabled={!isReady}
+          >
+            {PLAYBACK_RATES.map((option) => (
+              <SegmentedControlItem
+                key={option}
+                value={String(option)}
+                label={`${option}×`}
+              />
+            ))}
+          </SegmentedControl>
+
           <HStack gap={1} vAlign="center">
-            <Icon icon="error" color="error" size="sm" />
-            <Text type="supporting">{error}</Text>
+            <IconButton
+              label={isMuted ? 'Unmute' : 'Mute'}
+              icon={<Icon icon={isMuted || volume === 0 ? VolumeX : Volume2} />}
+              variant="ghost"
+              size="sm"
+              isDisabled={!isReady}
+              tooltip={`${isMuted ? 'Unmute' : 'Mute'} (M)`}
+              onClick={toggleMute}
+            />
+            <Slider
+              label="Volume"
+              isLabelHidden
+              width={92}
+              value={isMuted ? 0 : volume}
+              min={0}
+              max={1}
+              step={0.01}
+              valueDisplay="none"
+              formatValue={(value) => `${Math.round(value * 100)}%`}
+              isDisabled={!isReady}
+              onChange={(value: number | [number, number]) =>
+                setVolume(typeof value === 'number' ? value : value[0])
+              }
+            />
           </HStack>
-        ) : null}
-      </VStack>
-    </Section>
+        </HStack>
+      </HStack>
+
+      {error ? (
+        <HStack gap={1} vAlign="center">
+          <Icon icon="error" color="error" size="sm" />
+          <Text type="supporting">{error}</Text>
+        </HStack>
+      ) : null}
+    </VStack>
   );
 }

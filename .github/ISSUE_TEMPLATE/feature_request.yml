@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest something Miniscribe should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The gap in your workflow, not the feature itself.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you want to happen?
+  - type: markdown
+    attributes:
+      value: |
+        One thing worth knowing before proposing anything that involves a
+        network call: Miniscribe is on-device only, on purpose (see
+        CONTRIBUTING.md). A feature that needs a cloud API is a much bigger
+        conversation than a typical request — it's worth opening as a
+        discussion first rather than an issue.

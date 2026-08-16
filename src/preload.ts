@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('api', {
   /** Re-run ASR over an earlier session's WAVs. Takes an id, never a path. */
   recordingsTranscribe: (id: string, opts: { diarize: boolean; numSpeakers: number }) =>
     ipcRenderer.invoke('recordings:transcribe', id, opts),
+  /** The transcript saved with the recording, or null if it has none. */
+  recordingsTranscript: (id: string) => ipcRenderer.invoke('recordings:transcript', id),
+  /** Delete a recording and its audio. Resolves with the remaining recordings. */
+  recordingsDelete: (id: string) => ipcRenderer.invoke('recordings:delete', id),
   /** User-supplied speaker names for a recording, keyed by raw speaker id. */
   recordingsLabels: (id: string) => ipcRenderer.invoke('recordings:labels', id),
   recordingsSetLabels: (id: string, labels: Record<string, string>) =>
@@ -76,5 +80,16 @@ contextBridge.exposeInMainWorld('api', {
     cb: (progress: { id: string; progressPct: number; downloadSpeedMb: number }) => void,
   ): void => {
     ipcRenderer.on('models:progress', (_evt, p) => cb(p));
+  },
+  /** Current update state: version, whether one is waiting, download progress. */
+  updaterState: () => ipcRenderer.invoke('updater:state'),
+  /** Ask the update feed now; resolves with the state the check left behind. */
+  updaterCheck: () => ipcRenderer.invoke('updater:check'),
+  /** Fetch the waiting update. Downloads never start on their own. */
+  updaterDownload: () => ipcRenderer.invoke('updater:download'),
+  /** Quit and install what has been downloaded. */
+  updaterInstall: () => ipcRenderer.invoke('updater:install'),
+  onUpdaterChanged: (cb: (state: unknown) => void): void => {
+    ipcRenderer.on('updater:changed', (_evt, s) => cb(s));
   },
 });

@@ -5,7 +5,7 @@ import { getModelsDir, loadSettings, MODEL_CATALOG } from './model-manager';
 // sherpa-onnx-node is a native (N-API) CommonJS addon. It's marked external in the
 // esbuild config, so this require() stays intact and resolves at runtime from
 // node_modules. `require` is provided by esbuild's CJS/node output.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports
 const sherpa: any = require('sherpa-onnx-node');
 
 const SAMPLE_RATE = 16000;

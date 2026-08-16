@@ -4,6 +4,36 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Miniscribe</title>
+    <!--
+      The renderer is not allowed to reach the network at all: connect-src 'none'
+      means no fetch, no XHR, no WebSocket, and default-src 'none' closes
+      everything this list does not reopen. That is the privacy claim in the
+      README, enforced rather than promised — if a dependency ever starts
+      phoning home, the request fails and logs instead of succeeding quietly.
+
+      The page is loaded with loadFile(), so its own assets arrive over file:
+      and each directive that needs local content names it. 'unsafe-inline' is
+      here for style only: the design system sets colours through inline style
+      attributes, which CSP counts as inline styles. Scripts get no such
+      exception, so injected markup cannot execute.
+
+      Fonts and audio: fonts are inlined as data: URIs by the bundler, and
+      playback points an <audio> element at a file:// URL from recordings:audio.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none';
+               script-src 'self' file:;
+               style-src 'self' file: 'unsafe-inline';
+               img-src 'self' file: data: blob:;
+               font-src 'self' file: data:;
+               media-src 'self' file: blob:;
+               connect-src 'none';
+               object-src 'none';
+               base-uri 'none';
+               form-action 'none';
+               frame-src 'none'"
+    />
     <link rel="stylesheet" href="../../dist/renderer.css" />
     <style>
       html, body, #root {
@@ -14,6 +44,19 @@
         height: 100%;
         overflow: hidden;
       }
+      /*
+        A tooltip must never take the pointer.
+
+        It is placed near the control it describes, and in a window as short as
+        the mini widget it lands ON that control — at which point the pointer is
+        over the tooltip rather than the button, the button sees a mouseleave,
+        the tooltip hides, the button is hovered again, and the whole thing
+        flickers along with the cursor. Hit-testing the description of a thing
+        is never what anyone wants.
+      */
+      [role='tooltip'] {
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -21,3 +64,4 @@
     <script src="../../dist/renderer.js"></script>
   </body>
 </html>
+

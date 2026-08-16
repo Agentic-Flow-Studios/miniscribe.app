@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react';
+import { AlertDialog } from '@astryxdesign/core/AlertDialog';
+import { Banner } from '@astryxdesign/core/Banner';
+import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
 import { ClickableCard } from '@astryxdesign/core/ClickableCard';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
@@ -9,7 +12,7 @@ import { IconButton } from '@astryxdesign/core/IconButton';
 import { Section } from '@astryxdesign/core/Section';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { AudioLines, Calendar, Mic, Search, User, Users, Volume2 } from 'lucide-react';
+import { AudioLines, Calendar, Mic, Search, Trash2, User, Users, Volume2 } from 'lucide-react';
 import type { Recording } from './use-session';
 
 interface RecordingsListPageProps {
@@ -19,6 +22,11 @@ interface RecordingsListPageProps {
   onOpenRecording: (id: string) => void;
   onRefreshRecordings: () => void;
   onNewRecording: () => void;
+  /** Delete for good. The caller confirms nothing — this page asks first. */
+  onDeleteRecording: (id: string) => void;
+  /** The outcome of the last library action, to report where it happened. */
+  notice: { ok: boolean; text: string } | null;
+  onDismissNotice: () => void;
 }
 
 /** The reading width of the list. Rows past this get hard to scan end to end. */
@@ -71,8 +79,14 @@ export function RecordingsListPage({
   onOpenRecording,
   onRefreshRecordings,
   onNewRecording,
+  onDeleteRecording,
+  notice,
+  onDismissNotice,
 }: RecordingsListPageProps): React.ReactNode {
   const [searchQuery, setSearchQuery] = useState('');
+  // The recording the user has asked to delete, held until they confirm. Null
+  // means no question is on screen.
+  const [pendingDelete, setPendingDelete] = useState<Recording | null>(null);
 
   const filteredRecordings = useMemo(() => {
     if (!searchQuery.trim()) return recordings;
@@ -147,6 +161,17 @@ export function RecordingsListPage({
         </VStack>
       </Section>
 
+      {notice && (
+        <Banner
+          status={notice.ok ? 'success' : 'error'}
+          container="section"
+          title={notice.ok ? 'Done' : 'That did not work'}
+          description={notice.text}
+          isDismissable
+          onDismiss={onDismissNotice}
+        />
+      )}
+
       {/* Flex-sized, not height:100% — the latter is 100% of the page in
           ADDITION to the header above it, which pushes the last row past the
           bottom of the window. */}
@@ -171,7 +196,7 @@ export function RecordingsListPage({
               actions={
                 !searchQuery ? (
                   <Button
-                    label="Set Up Your First Recording"
+                    label="Record in the Mini Widget"
                     icon={<Icon icon={Mic} />}
                     variant="primary"
                     clickAction={onNewRecording}
@@ -187,53 +212,150 @@ export function RecordingsListPage({
                 <ClickableCard
                   key={rec.id}
                   label={`Open recording from ${fmtWhen(rec.startedAt)}`}
-                  padding={3}
+                  padding={4}
                   variant={isSelected ? 'muted' : 'default'}
                   isDisabled={isBusy}
                   onClick={() => onOpenRecording(rec.id)}
+                  style={{
+                    border: isSelected
+                      ? '2px solid var(--color-accent)'
+                      : '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    backgroundColor: isSelected
+                      ? 'var(--color-background-muted)'
+                      : 'var(--color-background-card)',
+                    boxShadow: 'var(--shadow-low)',
+                    transition: 'all 0.2s ease-in-out',
+                    marginBottom: '8px',
+                  }}
                 >
-                  <VStack gap={1.5}>
-                    <HStack width="100%" vAlign="center" hAlign="between" gap={2}>
-                      <HStack gap={1.5} vAlign="center">
+                  <HStack width="100%" vAlign="center" hAlign="between" gap={3}>
+                    <HStack gap={3} vAlign="center" style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          backgroundColor: isSelected ? 'var(--color-accent)' : 'var(--color-background-muted)',
+                          color: isSelected ? '#ffffff' : 'var(--color-accent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
                         <Icon icon={AudioLines} size="sm" color="accent" />
-                        <Text type="body" weight="semibold">
-                          {fmtWhen(rec.startedAt)}
-                        </Text>
-                        {isSelected && (
-                          <Text type="label" size="sm" color="accent" weight="semibold">
-                            Active
+                      </div>
+
+                      <VStack gap={1} style={{ flex: 1, minWidth: 0 }}>
+                        <HStack gap={2} vAlign="center" wrap="wrap">
+                          <Text
+                            type="body"
+                            weight="semibold"
+                            style={{ fontSize: '17px', color: 'var(--color-text-primary)' }}
+                          >
+                            {fmtWhen(rec.startedAt)}
                           </Text>
-                        )}
-                      </HStack>
-                      <Text type="label" size="sm" color="secondary">
-                        {fmtDuration(rec.seconds)}
-                      </Text>
+                          {isSelected && (
+                            <Badge variant="info" label="Active Session" />
+                          )}
+                        </HStack>
+
+                        <HStack gap={2} vAlign="center" wrap="wrap">
+                          <HStack gap={1} vAlign="center">
+                            <Icon icon={Calendar} size="sm" color="secondary" />
+                            <span
+                              className="text-label-md"
+                              style={{ color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}
+                            >
+                              {fmtExactDate(rec.startedAt)}
+                            </span>
+                          </HStack>
+                          <Text type="supporting" size="sm" color="disabled">
+                            •
+                          </Text>
+                          <HStack gap={1} vAlign="center">
+                            <Icon icon={isSolo ? User : Users} size="sm" color="secondary" />
+                            <Text type="supporting" size="sm" color="secondary">
+                              {participants(rec.tracks)}
+                            </Text>
+                          </HStack>
+                        </HStack>
+                      </VStack>
                     </HStack>
 
-                    <HStack gap={2} vAlign="center" wrap="wrap">
-                      <HStack gap={1} vAlign="center">
-                        <Icon icon={Calendar} size="sm" color="secondary" />
-                        <Text type="supporting" size="sm" color="secondary">
-                          {fmtExactDate(rec.startedAt)}
-                        </Text>
-                      </HStack>
-                      <Text type="supporting" size="sm" color="disabled">
-                        •
-                      </Text>
-                      <HStack gap={1} vAlign="center">
-                        <Icon icon={isSolo ? User : Users} size="sm" color="secondary" />
-                        <Text type="supporting" size="sm" color="secondary">
-                          {participants(rec.tracks)}
-                        </Text>
-                      </HStack>
+                    <HStack gap={2} vAlign="center">
+                      <div
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          backgroundColor: 'var(--color-background-muted)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <span
+                          className="text-label-md"
+                          style={{
+                            color: 'var(--color-text-accent)',
+                            fontWeight: 600,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {fmtDuration(rec.seconds)}
+                        </span>
+                      </div>
+
+                      {/* Inside a card that opens the recording, so the click
+                          must stop here — otherwise asking to delete would
+                          open the thing you are deleting behind the question. */}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPendingDelete(rec);
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        style={{ display: 'inline-flex' }}
+                      >
+                        <IconButton
+                          label={`Delete recording from ${fmtWhen(rec.startedAt)}`}
+                          icon={<Icon icon={Trash2} size="sm" />}
+                          variant="destructive"
+                          size="sm"
+                          isDisabled={isBusy}
+                          tooltip="Delete this recording and its audio"
+                        />
+                      </span>
                     </HStack>
-                  </VStack>
+                  </HStack>
                 </ClickableCard>
               );
             })
           )}
         </VStack>
       </VStack>
+
+      {/* Destructive and irreversible: the audio is the only copy, and no
+          transcript survives the directory it lives in. */}
+      <AlertDialog
+        isOpen={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="Delete this recording?"
+        description={
+          pendingDelete
+            ? `The audio and transcript from ${fmtWhen(
+                pendingDelete.startedAt,
+              )} (${fmtDuration(pendingDelete.seconds)}) will be deleted from this device. This cannot be undone.`
+            : ''
+        }
+        actionLabel="Delete Recording"
+        actionVariant="destructive"
+        onAction={() => {
+          if (pendingDelete) onDeleteRecording(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
     </VStack>
   );
 }

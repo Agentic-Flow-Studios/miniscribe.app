@@ -1,10 +1,41 @@
-/* Self-hosted so the app keeps working with no network — the whole point of a
-   local transcription tool. The theme only NAMES a family; if the file is
-   missing the design system silently falls back to the platform sans, which is
-   what "Figtree" did before this existed.
+/*
+  Every face is self-hosted. This app's promise is that nothing it does touches
+  the network unless the user asked for it, and a webfont link is a request to a
+  third party on every launch carrying the user's IP — the one piece of
+  telemetry you get without writing any. esbuild inlines these as data: URIs
+  (see the .woff2 dataurl loader in scripts/build-renderer.mjs), so there is no
+  font file to find at runtime either.
 
-   Latin subset of the Nunito variable font (weights 400–800 in one file, 38KB).
-   Licensed OFL 1.1 — see fonts/Nunito-OFL.txt. */
+  All four families are SIL Open Font License 1.1; the licence text for each
+  sits beside the .woff2 in ./fonts/.
+
+  These are the latin subsets of the variable fonts, which is why one file
+  covers the whole weight range.
+*/
+@font-face {
+  font-family: 'Hanken Grotesk';
+  src: url('./fonts/hanken-grotesk-latin-variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('./fonts/inter-latin-variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/jetbrains-mono-latin-variable.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: 'Nunito';
   src: url('./fonts/nunito-latin-variable.woff2') format('woff2');
@@ -13,15 +44,175 @@
   font-display: swap;
 }
 
-/* Astryx sets the family on its own components, not on the document, so any
-   text outside one lands on the browser default — Times New Roman. Point the
-   root at the theme's own token rather than repeating the family name, so this
-   follows whatever the theme says. */
-body {
-  font-family: var(--font-family-body);
+:root {
+  /* Brand Typography Families */
+  --font-family-heading: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-code: 'JetBrains Mono', ui-monospace, "SF Mono", Monaco, Consolas, monospace;
+
+  /* Mini Scribe Design Tokens */
+  --color-surface: #f8f9ff;
+  --color-surface-dim: #cbdbf5;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-surface-container: #e5eeff;
+  --color-surface-container-high: #dce9ff;
+  --color-surface-container-highest: #d3e4fe;
+  --color-on-surface: #0b1c30;
+  --color-on-surface-variant: #45464d;
+  --color-inverse-surface: #213145;
+  --color-inverse-on-surface: #eaf1ff;
+  --color-outline: #76777d;
+  --color-outline-variant: #c6c6cd;
+  --color-surface-tint: #565e74;
+  --color-primary: #000000;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #131b2e;
+  --color-on-primary-container: #7c839b;
+  --color-inverse-primary: #bec6e0;
+  --color-secondary: #0051d5;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #316bf3;
+  --color-on-secondary-container: #fefcff;
+  --color-tertiary: #000000;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #191c1e;
+  --color-on-tertiary-container: #818486;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-background: #f8f9ff;
+  --color-on-background: #0b1c30;
+
+  /* Spacing Tokens */
+  --sidebar-width: 280px;
+  --gutter: 24px;
+  --margin-desktop: 40px;
+  --margin-mobile: 16px;
+  --stack-sm: 8px;
+  --stack-md: 16px;
+  --stack-lg: 32px;
+
+  /* Rounded Radius Tokens */
+  --radius-sm: 0.125rem;
+  --radius-default: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
 }
 
-/* Ensure all popovers and buttons inside popovers are left aligned */
+/* Base Body Styling */
+body {
+  font-family: var(--font-family-body);
+  background-color: var(--color-background);
+  color: var(--color-on-background);
+}
+
+/* Heading Typography System */
+h1, h2, h3, h4, h5, h6,
+.astryx-heading {
+  font-family: var(--font-family-heading) !important;
+}
+
+/* Typography Classes */
+.text-headline-lg {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 40px;
+}
+
+.text-headline-md {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.text-headline-sm {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.text-body-lg {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+.text-body-md {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.text-body-sm {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.text-label-md {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.text-label-sm {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+/* Active row highlight in transcription view */
+.transcription-active-row {
+  background-color: rgba(0, 81, 213, 0.05) !important;
+  border-left: 3px solid #0051d5 !important;
+}
+
+/* Custom Input Focus Styling: 2px Action Blue on focus */
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+.astryx-text-input:focus-within {
+  border-color: #0051d5 !important;
+  box-shadow: 0 0 0 1px #0051d5 !important;
+  outline: none !important;
+}
+
+/* Pulsing Red Record Icon Animation */
+@keyframes recordPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+    transform: scale(1.05);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    transform: scale(1);
+  }
+}
+
+.pulsing-record-icon {
+  animation: recordPulse 2s infinite;
+  background-color: #ba1a1a;
+  border-radius: 50%;
+}
+
+/* Align popover content */
 [popover],
 .astryx-popover,
 [role="dialog"] {
@@ -35,4 +226,5 @@ body {
   justify-content: flex-start !important;
   text-align: left !important;
 }
+
 

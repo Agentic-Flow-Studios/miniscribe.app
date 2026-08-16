@@ -10,6 +10,9 @@
 // Run: npx electron test/electron-live-test.js
 const path = require('node:path');
 const { app } = require('electron');
+// Points userData at a throwaway dir with the repo's models linked in. Must come
+// before anything reads a model path — see the file for why.
+require('./user-data');
 const sherpa = require('sherpa-onnx-node');
 const { transcribeTracks, makeLiveTrack } = require('../dist/transcription.js');
 

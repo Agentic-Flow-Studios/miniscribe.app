@@ -1,57 +1,121 @@
+import React from 'react';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
+import MiniscribeLogo from '../../assets/miniscribe_logo.svg';
+
+export interface FlowMarkProps {
+  /** Total outer dimension (width & height in px) */
+  size?: number;
+  /** Custom fill color override for the soundwave logo mark */
+  color?: string;
+  /** Whether to frame the logo mark inside a styled rounded square tile */
+  withTile?: boolean;
+  /** Corner radius for the tile container (defaults to 12px) */
+  tileRadius?: number | string;
+  /** Background color for the tile container */
+  tileBackground?: string;
+  className?: string;
+  style?: React.CSSProperties;
+}
 
 /**
- * The studio mark. Three strokes flowing into one — drawn rather than shipped
- * as an asset so it inherits the theme's colour and stays crisp at any density,
- * and so the renderer bundle gains nothing to load.
+ * The official Miniscribe logo mark loaded directly from assets/miniscribe_logo.svg
+ * as a native React Component via build-time SVG transformation.
  */
-export function FlowMark({ size = 16 }: { size?: number }): React.ReactNode {
+export function FlowMark({
+  size = 48,
+  color,
+  withTile = true,
+  tileRadius = 12,
+  tileBackground,
+  className,
+  style,
+}: FlowMarkProps): React.ReactNode {
+  const iconSize = withTile ? Math.round(size * 0.62) : size;
+
+  const logoNode = (
+    <MiniscribeLogo
+      width={iconSize}
+      height={iconSize}
+      style={{
+        display: 'block',
+        color: color,
+      }}
+    />
+  );
+
+  if (withTile) {
+    return (
+      <span
+        className={className}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: size,
+          height: size,
+          borderRadius: typeof tileRadius === 'number' ? `${tileRadius}px` : tileRadius,
+          backgroundColor: tileBackground || 'var(--color-surface-elevated, var(--color-background-subtle, rgba(0, 0, 0, 0.05)))',
+          border: '1px solid var(--color-border, rgba(0, 0, 0, 0.08))',
+          boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)',
+          flexShrink: 0,
+          ...style,
+        }}
+      >
+        {logoNode}
+      </span>
+    );
+  }
+
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      aria-hidden="true"
-      focusable="false"
+    <span
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: size,
+        height: size,
+        flexShrink: 0,
+        ...style,
+      }}
     >
-      <path d="M3 6c5 0 5 12 10 12s5-12 8-12" opacity={0.55} />
-      <path d="M3 12c5 0 5 6 10 6" opacity={0.8} />
-      <circle cx="19" cy="16" r="2.5" fill="currentColor" stroke="none" />
-    </svg>
+      {logoNode}
+    </span>
   );
 }
 
 /**
  * Studio credit, at the foot of the side nav.
- *
- * It belongs to the app rather than to whichever transcript happens to be open,
- * so it sits in the nav rail's footer — outside every page's scroll region and
- * unchanged as the user moves between pages. Muted and two lines tall: the
- * transcript is what the user came for.
  */
 export function BrandCredit(): React.ReactNode {
+  const version = typeof process !== 'undefined' && process.env?.APP_VERSION ? process.env.APP_VERSION : 'v0.0.1';
+
   return (
     <VStack gap={1} paddingBlock={1}>
-      <HStack gap={1.5} vAlign="center">
-        <Text type="supporting" size="2xs" color="accent">
-          <FlowMark size={14} />
-        </Text>
+      <HStack gap={1.5} vAlign="center" hAlign="between" width="100%">
         <Text type="supporting" size="xsm" color="secondary">
           By{' '}
-          <Text type="inherit" weight="semibold" color="primary">
-            Agentic Flow Studios
-          </Text>
+          <a
+            href="https://agentic-flow.studio"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: 'inherit',
+              textDecoration: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Text type="inherit" weight="semibold" color="primary">
+              Agentic Flow Studios
+            </Text>
+          </a>
+        </Text>
+        <Text type="supporting" size="2xs" color="disabled" style={{ fontFamily: 'monospace', opacity: 0.7 }}>
+          {version}
         </Text>
       </HStack>
-      <Text type="supporting" size="xsm" color="disabled">
-        Transcribed on this device — no audio ever leaves it.
-      </Text>
     </VStack>
   );
 }

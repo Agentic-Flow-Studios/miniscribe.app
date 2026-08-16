@@ -26,7 +26,7 @@ Sponsored with ❤️ by **[Agentic Flow Studios](https://agentic-flow.studio)**
 
 ## ✨ Key Features
 
-- 🔒 **100% On-Device Privacy**: All speech-to-text processing occurs locally. Zero cloud subscriptions, zero API fees, and total privacy for sensitive discussions.
+- 🔒 **100% On-Device Privacy**: All speech-to-text processing occurs locally. Zero cloud subscriptions, zero API fees, and total privacy for sensitive discussions. Fonts are self-hosted and the renderer ships a `connect-src 'none'` Content-Security-Policy, so the UI *cannot* reach the network at all. The only two things that ever leave your machine are requests you trigger yourself: downloading a model, and checking for an app update.
 - 📌 **Floating Mini Widget**: A compact, always-on-top floating control bar that stays accessible over any app with one-touch recording, delay start timer, and live voice meters.
 - 🎙️ **Dual-Track Audio Capture**: Captures your microphone ("You") and system loopback audio ("Them" / Zoom, Teams, Meet, Discord) as separate, synchronized audio tracks.
 - 💬 **Live Speaker Diarization**: Separates and attributes speech to different speakers using Pyannote segmentation & TitaNet speaker embeddings.
@@ -60,16 +60,36 @@ cd miniscribe.app
 npm install
 ```
 
-#### 3. Run in development mode
+#### 3. Download the speech models
+```bash
+npm run get-model
+```
+Fetches the Parakeet ASR model plus the VAD and diarization models (~700MB) into `models/`.
+
+#### 4. Run in development mode
 ```bash
 npm run start
 ```
 
-#### 4. Build distribution installers
+#### 5. Build distribution installers
 ```bash
 npm run dist
 ```
 Generates production installers inside the `dist/installers/` directory.
+
+---
+
+## 🧪 Running the Tests
+
+The suites live in `test/` and drive a real Electron instance, so they need the models from step 3 above. They are not run in CI for that reason.
+
+```bash
+npm run typecheck   # TypeScript, no emit
+npm test            # transcription
+npm run test:all    # every suite, start to finish
+```
+
+Individual suites are listed as `test:*` scripts in `package.json` — `test:ipc`, `test:widget`, `test:layout`, `test:delete`, and so on. Suites that open audio devices (`test:audio`, `test:capture`, `test:live`) need a working microphone.
 
 ---
 
