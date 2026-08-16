@@ -123,7 +123,7 @@
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "typescript": "^5.6.2",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.67.0"
   },
   "comments": {
