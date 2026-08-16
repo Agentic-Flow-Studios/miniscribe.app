@@ -36,20 +36,26 @@ jobs:
       #
       # publish.releaseType is "draft" in package.json, so both matrix jobs
       # append to the same draft release. Publish it manually when both are green.
-      - run: npx electron-builder --publish always
+      # Split per-OS on purpose. CSC_LINK is not mac-specific -- electron-builder
+      # also reads it for Windows Authenticode -- so a single shared env block
+      # would hand the macOS Developer ID cert to the Windows job.
+      - name: Build and publish (macOS)
+        if: runner.os == 'macOS'
+        run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
           # Developer ID Application cert, as a base64-encoded .p12.
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # Only hunt the keychain for an identity once a cert is actually
-          # supplied; otherwise electron-builder errors instead of skipping.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
-
           # Notarization via notarytool. All three are required together --
           # electron-builder throws InvalidConfigurationError if any is missing
-          # once APPLE_ID is set. Ignored on the Windows job.
+          # once APPLE_ID is set.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build and publish (Windows)
+        if: runner.os == 'Windows'
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
