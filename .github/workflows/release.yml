@@ -42,6 +42,34 @@ jobs:
 
       - run: npm run build
 
+      # electron-builder uploads assets in parallel, and two of those uploads
+      # each call "create the draft if it is absent" at once. Both win, and a
+      # second orphaned draft appears holding whichever artifact lost the race
+      # (the .exe blockmap, every time so far). Serializing the matrix did not
+      # help -- the race is inside a single electron-builder run, not between
+      # jobs. Creating the draft up front leaves nothing to race over. The tag
+      # is derived from package.json exactly as electron-builder derives it, so
+      # this works for workflow_dispatch as well as for tag pushes.
+      - name: Ensure draft release exists
+        shell: bash # windows-latest defaults to pwsh
+        run: |
+          set -euo pipefail
+          TAG="v$(node -p "require('./package.json').version")"
+          # Matched against the releases list rather than `gh release view`:
+          # a draft has no real git tag behind it, so tag lookups are not a
+          # reliable existence check, and a false negative here would create
+          # the very duplicate this step exists to prevent.
+          COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"${TAG}\")] | length")
+          if [ "$COUNT" -eq 0 ]; then
+            echo "Creating draft release $TAG"
+            gh release create "$TAG" --draft --title "$TAG" --notes "Draft"
+          else
+            echo "Draft release $TAG already exists ($COUNT matching)"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # electron-builder does the upload itself so it can generate latest.yml /
       # latest-mac.yml alongside the installers. electron-updater reads those to
       # find new versions -- hand-uploading artifacts to the release breaks

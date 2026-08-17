@@ -16,12 +16,16 @@ permissions:
 
 jobs:
   check:
-    # Windows only. macOS runners bill at a 10x multiplier on private repos,
-    # and this job is a typecheck/lint/build gate -- nothing in it is
-    # platform-specific. The arm64 native-dependency question that justified a
-    # macOS leg (sherpa-onnx-node prebuilds) is settled, and the release
-    # workflow still builds on macOS for real.
-    runs-on: windows-latest
+    # Both platforms. The macOS leg is here to catch a broken `npm ci` on
+    # arm64 -- sherpa-onnx-node ships prebuilds per platform and the darwin
+    # ones have 404'd before (see the pin comment in package.json). Finding
+    # that on push is cheap; finding it an hour into a release build, after
+    # notarization, is not. Actions minutes are free on public repos.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
