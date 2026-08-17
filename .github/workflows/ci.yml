@@ -16,11 +16,12 @@ permissions:
 
 jobs:
   check:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    # Windows only. macOS runners bill at a 10x multiplier on private repos,
+    # and this job is a typecheck/lint/build gate -- nothing in it is
+    # platform-specific. The arm64 native-dependency question that justified a
+    # macOS leg (sherpa-onnx-node prebuilds) is settled, and the release
+    # workflow still builds on macOS for real.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
 

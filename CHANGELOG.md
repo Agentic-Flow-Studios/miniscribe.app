@@ -6,7 +6,9 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-Pre-launch hardening pass, ahead of the first tagged release.
+## [0.1.0] — 2026-08-17
+
+Pre-launch hardening pass, and the first tagged release.
 
 ### Added
 - `sha256` verification on every downloaded model, checked before extraction.
@@ -19,6 +21,15 @@ Pre-launch hardening pass, ahead of the first tagged release.
   only reachable from the mini widget's menu.
 - `npm run lint` (ESLint + typescript-eslint + react-hooks), wired into CI.
 - `npm run hash-models` to compute the sha256s above.
+- GitHub Actions: a CI gate (typecheck, lint, build) and a tag-driven release
+  workflow that builds on Windows and macOS and publishes a draft release,
+  including the `latest.yml` manifests `electron-updater` reads.
+- macOS code signing (Developer ID Application) and notarization, with hardened
+  runtime entitlements for V8, the native ASR addons, and microphone access.
+- `NSMicrophoneUsageDescription`, without which macOS terminates the app on
+  first microphone access rather than prompting.
+- MIT `LICENSE`, and `repository` / `license` fields in `package.json` —
+  electron-builder infers the publish target from the former.
 
 ### Changed
 - All four UI fonts are now self-hosted (`src/renderer/fonts/`) instead of
@@ -38,6 +49,7 @@ Pre-launch hardening pass, ahead of the first tagged release.
   effect after the next app launch.
 - Downloads stream through a backpressured pipeline instead of an unbounded
   chunk queue, so a 600MB model can no longer sit entirely in memory.
+- macOS builds target Apple Silicon (arm64) only; there is no Intel build.
 
 ### Fixed
 - `transcribe-files` (the one IPC handler that takes a path instead of a

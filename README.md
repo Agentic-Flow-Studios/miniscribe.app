@@ -7,7 +7,7 @@
 *100% Private · Zero Cloud APIs · Always-On-Top Mini Widget · Dual-Track Audio Capture*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-brightgreen.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20(Apple%20Silicon)-brightgreen.svg)]()
 [![Electron](https://img.shields.io/badge/Electron-v43-47848F.svg)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-v19-61DAFB.svg)](https://react.dev/)
 [![Sponsored by Agentic Flow Studios](https://img.shields.io/badge/Sponsored%20by-Agentic%20Flow%20Studios-ff3b30.svg)](https://agentic-flow.studio)
@@ -41,7 +41,7 @@ Sponsored with ❤️ by **[Agentic Flow Studios](https://agentic-flow.studio)**
 ### Option 1: Download Pre-Built Installers
 Grab the latest release for your operating system from the [Releases](https://github.com/agentic-flow-studios/miniscribe.app/releases) page:
 - **Windows**: `Miniscribe-Setup-x.x.x.exe` (1-click installer with desktop & start menu shortcuts).
-- **macOS**: `Miniscribe-x.x.x.dmg` or `.zip`.
+- **macOS**: `Miniscribe-x.x.x-arm64.dmg` or `.zip`. **Apple Silicon only** — there is no Intel build.
 
 ### Option 2: Build from Source
 
