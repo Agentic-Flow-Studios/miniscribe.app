@@ -11,9 +11,22 @@ permissions:
 
 jobs:
   build:
+    # Signing secrets live in this environment, not at repo level, so a workflow
+    # that does not declare it -- ci.yml, or anything a PR adds -- cannot read
+    # them at all.
+    environment: release
+
+    # A wedged notarization would otherwise run to GitHub's 6h cap, and macOS
+    # runners bill at a 10x multiplier on private repos.
+    timeout-minutes: 90
+
     strategy:
       # Keep one OS failing from cancelling the other's upload.
       fail-fast: false
+      # Both jobs race to create the draft release, and the loser silently
+      # creates a second one that a few artifacts land in. Serialize: Windows
+      # finishes in ~3min and creates the draft, then macOS appends to it.
+      max-parallel: 1
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}

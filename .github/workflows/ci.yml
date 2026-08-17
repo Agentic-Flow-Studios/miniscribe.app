@@ -9,6 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Stated in-file rather than relying on the repo default, so a change to that
+# default cannot silently widen what a PR's workflow run is allowed to do.
+permissions:
+  contents: read
+
 jobs:
   check:
     strategy:
