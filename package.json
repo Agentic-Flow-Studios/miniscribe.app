@@ -25,6 +25,7 @@
     "build": "npm run build:main && npm run build:renderer && npm run build:worklet",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "build:test": "esbuild src/transcription.ts src/recorder.ts src/ipc.ts src/updater.ts src/window-sizes.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
     "build:test:renderer": "esbuild src/renderer/session-metrics.ts src/renderer/transcript-export.ts --bundle --platform=node --format=cjs --outdir=dist/test",
     "test:metrics": "npm run build:test:renderer && node test/metrics-export-test.js",

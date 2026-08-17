@@ -17,7 +17,6 @@ import {
   Check,
   Cpu,
   Download,
-  ExternalLink,
   HardDrive,
   Laptop,
   Mic,

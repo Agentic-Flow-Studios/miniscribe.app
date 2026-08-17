@@ -35,7 +35,7 @@ import { SessionInsights } from './SessionInsights';
 import { Transcript, type TranscriptView } from './Transcript';
 import { Transport } from './Transport';
 import { computeMetrics, fmtClock } from './session-metrics';
-import { linesAt, speakerColumns, wordAt, wordsOf } from './speaker-labels';
+import { linesAt, speakerColumns } from './speaker-labels';
 import {
   EXPORT_FORMATS,
   exportFileName,

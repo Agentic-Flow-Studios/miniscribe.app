@@ -13,7 +13,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  transcribeFiles,
   resetRecognizer,
   type TrackFile,
   type TranscriptSegment,
