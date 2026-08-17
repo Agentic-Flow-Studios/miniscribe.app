@@ -16,6 +16,8 @@ export interface AudioInput {
   label: string;
 }
 
+export type AudioPermissionStatus = 'prompt' | 'granted' | 'denied' | 'checking';
+
 export interface AudioInputs {
   /** Selectable microphones, without the "system default" entry. */
   devices: AudioInput[];
@@ -30,6 +32,12 @@ export interface AudioInputs {
    * first-run list is a row of "Microphone 2"-style placeholders.
    */
   hasLabels: boolean;
+  /** Microphone permission status: granted, denied, prompt, or checking. */
+  permissionStatus: AudioPermissionStatus;
+  /** Explanation if microphone access failed or was refused. */
+  permissionError: string | null;
+  /** Request microphone access from the user/OS to verify and reveal devices. */
+  requestPermission: () => Promise<boolean>;
   /** Ask for a momentary mic grant so the names above become real. */
   revealNames: () => void;
   /**
@@ -65,6 +73,8 @@ function readSaved(): string {
 export function useAudioInputs(): AudioInputs {
   const [devices, setDevices] = useState<AudioInput[]>([]);
   const [hasLabels, setHasLabels] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState<AudioPermissionStatus>('checking');
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [micDeviceId, setMicDeviceId] = useState<string>(readSaved);
   // Read inside the enumeration callback, which must not be rebuilt (and so
   // must not re-subscribe to devicechange) every time the selection moves.
@@ -90,7 +100,12 @@ export function useAudioInputs(): AudioInputs {
     }
 
     const inputs = found.filter((d) => d.kind === 'audioinput' && !ALIAS_IDS.has(d.deviceId));
-    setHasLabels(inputs.some((d) => d.label !== ''));
+    const labelsFound = inputs.some((d) => d.label !== '');
+    setHasLabels(labelsFound);
+    if (labelsFound) {
+      setPermissionStatus('granted');
+      setPermissionError(null);
+    }
     setDevices(
       inputs.map((d, i) => ({
         id: d.deviceId,
@@ -108,25 +123,73 @@ export function useAudioInputs(): AudioInputs {
     }
   }, [chooseMic]);
 
+  const requestPermission = useCallback(async (): Promise<boolean> => {
+    try {
+      setPermissionStatus('checking');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setPermissionStatus('granted');
+      setPermissionError(null);
+      await refresh();
+      return true;
+    } catch (err: unknown) {
+      console.warn('[inputs] microphone permission request failed:', err);
+      const name = (err as { name?: string })?.name;
+      let msg = 'Could not access the microphone.';
+      if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
+        msg = 'Microphone access was denied or blocked by system privacy settings.';
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        msg = 'No microphone device found on this system.';
+      } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+        msg = 'Microphone is currently in exclusive use by another application.';
+      }
+      setPermissionStatus('denied');
+      setPermissionError(msg);
+      await refresh();
+      return false;
+    }
+  }, [refresh]);
+
+  const revealNames = useCallback(() => {
+    void requestPermission();
+  }, [requestPermission]);
+
   useEffect(() => {
-    void refresh();
+    void refresh().then(() => {
+      if (navigator.mediaDevices) {
+        navigator.mediaDevices
+          .enumerateDevices()
+          .then((found) => {
+            const inputs = found.filter((d) => d.kind === 'audioinput' && !ALIAS_IDS.has(d.deviceId));
+            if (inputs.some((d) => d.label !== '')) {
+              setPermissionStatus('granted');
+              setHasLabels(true);
+            } else {
+              window.api?.systemGetPermissionStatus?.().then((status) => {
+                if (status?.microphone === 'granted') {
+                  void requestPermission();
+                } else if (status?.microphone === 'denied') {
+                  setPermissionStatus('denied');
+                  setPermissionError('Microphone access is blocked in your system privacy settings.');
+                } else {
+                  setPermissionStatus('prompt');
+                }
+              }).catch(() => {
+                setPermissionStatus('prompt');
+              });
+            }
+          })
+          .catch(() => {
+            setPermissionStatus('prompt');
+          });
+      }
+    });
+
     const media = navigator.mediaDevices;
     const onChange = (): void => void refresh();
     media.addEventListener('devicechange', onChange);
     return () => media.removeEventListener('devicechange', onChange);
-  }, [refresh]);
-
-  const revealNames = useCallback(() => {
-    if (hasLabels) return;
-    void navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        // The grant is the whole point; the audio is not wanted.
-        stream.getTracks().forEach((t) => t.stop());
-        return refresh();
-      })
-      .catch((err) => console.error('[inputs] name reveal failed', err));
-  }, [hasLabels, refresh]);
+  }, [refresh, requestPermission]);
 
   const micConstraintId = micDeviceId === SYSTEM_DEFAULT_INPUT ? null : micDeviceId;
   const test = useMicTest(micConstraintId);
@@ -137,6 +200,9 @@ export function useAudioInputs(): AudioInputs {
     micConstraintId,
     chooseMic,
     hasLabels,
+    permissionStatus,
+    permissionError,
+    requestPermission,
     revealNames,
     test,
   };

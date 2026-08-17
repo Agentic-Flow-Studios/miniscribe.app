@@ -4,8 +4,11 @@ declare module '*.svg' {
   export default FC;
 }
 
+declare module '*.css';
+
 declare namespace NodeJS {
   interface ProcessEnv {
     APP_VERSION?: string;
   }
 }
+

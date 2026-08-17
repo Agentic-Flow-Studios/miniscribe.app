@@ -68,6 +68,14 @@ export function lineAt(lines: TranscriptLine[], time: number): TranscriptLine | 
   return best;
 }
 
+/**
+ * All lines sounding at `time`, allowing concurrent speakers (e.g. Me and Them)
+ * to be highlighted simultaneously during playback.
+ */
+export function linesAt(lines: TranscriptLine[], time: number): TranscriptLine[] {
+  return lines.filter((line) => line.start <= time && time < line.end);
+}
+
 /** Index of the last word started at or before `time`; -1 before the first. */
 export function wordAt(words: { t: number }[], time: number): number {
   let i = -1;

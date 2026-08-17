@@ -35,7 +35,7 @@ import { SessionInsights } from './SessionInsights';
 import { Transcript, type TranscriptView } from './Transcript';
 import { Transport } from './Transport';
 import { computeMetrics, fmtClock } from './session-metrics';
-import { lineAt, speakerColumns, wordAt, wordsOf } from './speaker-labels';
+import { linesAt, speakerColumns, wordAt, wordsOf } from './speaker-labels';
 import {
   EXPORT_FORMATS,
   exportFileName,
@@ -176,13 +176,13 @@ export function RecordingPage({
     }
   }, []);
 
-  const activeLine = useMemo<TranscriptLine | null>(
-    () => (player.isPlaying || player.time > 0 ? lineAt(lines, player.time) : null),
+  const activeLines = useMemo<TranscriptLine[]>(
+    () => (player.isPlaying || player.time > 0 ? linesAt(lines, player.time) : []),
     [lines, player.isPlaying, player.time],
   );
-  const activeWord = useMemo(
-    () => (activeLine ? wordAt(wordsOf(activeLine), player.time) : -1),
-    [activeLine, player.time],
+  const activeLineIds = useMemo(
+    () => new Set(activeLines.map((l) => l.id)),
+    [activeLines],
   );
 
   const playAt = player.playAt;
@@ -630,8 +630,8 @@ export function RecordingPage({
                 activity={activity}
                 labels={speakerLabels}
                 onRename={session.renameSpeaker}
-                activeLineId={activeLine?.id ?? null}
-                activeWord={activeWord}
+                activeLineIds={activeLineIds}
+                playerTime={player.time}
                 isPlaying={player.isPlaying}
                 onPlayFrom={playableFrom ? playFrom : null}
                 view={view}

@@ -88,7 +88,14 @@ async function openMic(
 // Returns null when the grant produced no audio track (nothing playing, or
 // loopback unavailable on this device/platform).
 async function openSystem(): Promise<MediaStream | null> {
-  const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  const s = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
+  });
   s.getVideoTracks().forEach((t) => t.stop());
   if (s.getAudioTracks().length > 0) return s;
   s.getTracks().forEach((t) => t.stop());
@@ -104,7 +111,10 @@ export class WebCaptureSource implements CaptureSource {
   constructor(private cbs: CaptureCallbacks) {}
 
   async start(kinds: TrackKind[], opts: CaptureOptions = {}): Promise<TrackKind[]> {
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    // Open AudioContext at native hardware sample rate (e.g. 48kHz/44.1kHz).
+    // The AudioWorklet handles anti-aliased 16kHz downsampling in real-time,
+    // avoiding Chromium's internal PushPullFIFO clock drift and buffer overflow glitches.
+    const ctx = new AudioContext();
     this.ctx = ctx;
     await ctx.audioWorklet.addModule(WORKLET_URL);
 
@@ -121,10 +131,7 @@ export class WebCaptureSource implements CaptureSource {
       return [];
     }
 
-    // Every source is open; NOW fix t=0. Doing it at AudioContext construction
-    // would charge the recording for however long the user spent in a
-    // permission dialog — which on macOS can be a trip to System Settings.
-    this.baseFrame = Math.round(ctx.currentTime * ctx.sampleRate);
+    this.baseFrame = Math.round(ctx.currentTime * SAMPLE_RATE);
     for (const [kind, stream] of streams) this.attach(kind, stream);
     return [...streams.keys()];
   }
@@ -154,24 +161,7 @@ export class WebCaptureSource implements CaptureSource {
   }
 
   private receive(kind: TrackKind, state: TrackState, msg: WorkletMessage): void {
-    // Worklet frames are absolute to the AudioContext; rebase to recording start.
-    const frame = Math.max(0, msg.frame - this.baseFrame);
-
-    if (frame > state.nextFrame) {
-      const missing = frame - state.nextFrame;
-      this.cbs.onGap(kind, missing, state.nextFrame);
-      // Fill the hole with silence. Downstream timestamps are derived from
-      // cumulative sample counts, so leaving it unfilled would drag every later
-      // utterance earlier by exactly the size of the gap — silently, and
-      // permanently. The same path pads the head of a track that started late.
-      this.cbs.onChunk({
-        kind,
-        frame: state.nextFrame,
-        peak: 0,
-        samples: new Float32Array(missing),
-      });
-    }
-
+    const frame = state.nextFrame;
     this.cbs.onChunk({ kind, frame, peak: msg.peak, samples: msg.samples });
     state.nextFrame = frame + msg.samples.length;
   }

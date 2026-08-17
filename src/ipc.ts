@@ -1,4 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  shell,
+  systemPreferences,
+  utilityProcess,
+  type UtilityProcess,
+  type WebContents,
+} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -288,8 +298,26 @@ let onFlushed: (() => void) | null = null;
 // written beside the audio when the session stops.
 let liveSegments: TranscriptSegment[] = [];
 
+let transcribeReqId = 0;
+const pendingTranscriptions = new Map<
+  string,
+  {
+    resolve: (segments: TranscriptSegment[]) => void;
+    reject: (err: Error) => void;
+  }
+>();
+
 function send(msg: WorkerIn): void {
   asr?.postMessage(msg);
+}
+
+export async function requestTranscription(tracks: TrackFile[]): Promise<TranscriptSegment[]> {
+  ensureAsr();
+  const id = `tx-${++transcribeReqId}-${Date.now()}`;
+  return new Promise<TranscriptSegment[]>((resolve, reject) => {
+    pendingTranscriptions.set(id, { resolve, reject });
+    send({ type: 'transcribe', id, tracks });
+  });
 }
 
 function ensureAsr(): UtilityProcess {
@@ -326,6 +354,28 @@ function ensureAsr(): UtilityProcess {
         onFlushed?.();
         onFlushed = null;
         break;
+      case 'transcribe:progress':
+        client?.send('transcribe:progress', {
+          stage: msg.stage,
+          percent: msg.percent,
+        });
+        break;
+      case 'transcribe:done': {
+        const pending = pendingTranscriptions.get(msg.id);
+        if (pending) {
+          pendingTranscriptions.delete(msg.id);
+          pending.resolve(msg.segments);
+        }
+        break;
+      }
+      case 'transcribe:error': {
+        const pending = pendingTranscriptions.get(msg.id);
+        if (pending) {
+          pendingTranscriptions.delete(msg.id);
+          pending.reject(new Error(msg.error));
+        }
+        break;
+      }
       case 'error':
         console.error('[asr]', msg.message);
         client?.send('live:error', msg.message);
@@ -342,6 +392,10 @@ function ensureAsr(): UtilityProcess {
     onFlushed = null;
     onExited?.();
     onExited = null;
+    for (const [, pending] of pendingTranscriptions) {
+      pending.reject(new Error('ASR worker process exited unexpectedly.'));
+    }
+    pendingTranscriptions.clear();
   });
   asr = proc;
   return proc;
@@ -475,7 +529,8 @@ export function registerIpc(): void {
   // renderer cannot aim the transcriber at an arbitrary file on disk.
   ipcMain.handle(
     'recordings:transcribe',
-    async (_evt, id: string, opts: { diarize: boolean; numSpeakers: number }) => {
+    async (evt, id: string, opts: { diarize: boolean; numSpeakers: number }) => {
+      client = evt.sender;
       const dir = recordingDir(id);
       const tracks: TrackFile[] = TRACK_KINDS.filter((k) =>
         fs.existsSync(path.join(dir, `${k}.wav`)),
@@ -490,7 +545,7 @@ export function registerIpc(): void {
             },
       );
       if (tracks.length === 0) throw new Error(`Recording ${id} has no audio`);
-      const segments = transcribeFiles(tracks);
+      const segments = await requestTranscription(tracks);
       // A re-run replaces whatever was stored: it was asked for because the
       // stored pass was not what the user wanted (no speaker separation, or a
       // different model since).
@@ -603,7 +658,8 @@ export function registerIpc(): void {
   // keep echoing it back honestly, is what keeps this handler from being a
   // "run ASR over any WAV on disk and return the text" primitive sitting next
   // to a file of handlers that otherwise never accept one.
-  ipcMain.handle('transcribe-files', async (_evt, tracks: TrackFile[]) => {
+  ipcMain.handle('transcribe-files', async (evt, tracks: TrackFile[]) => {
+    client = evt.sender;
     const root = path.resolve(recordingsRoot());
     for (const t of tracks) {
       const resolved = path.resolve(t.path);
@@ -611,7 +667,7 @@ export function registerIpc(): void {
         throw new Error(`Refusing to transcribe a path outside recordings: ${t.path}`);
       }
     }
-    return transcribeFiles(tracks);
+    return requestTranscription(tracks);
   });
 
   // --- Window controls ----------------------------------------------------
@@ -715,5 +771,43 @@ export function registerIpc(): void {
     await restartAsr();
     return listModelStatuses();
   });
+
+  // --- System & Permissions -----------------------------------------------
+
+  ipcMain.handle('system:open-privacy-settings', async (_evt, type: 'microphone' | 'screen' = 'microphone') => {
+    const isWin = process.platform === 'win32';
+    const isMac = process.platform === 'darwin';
+    if (isWin) {
+      if (type === 'microphone') {
+        await shell.openExternal('ms-settings:privacy-microphone');
+      } else {
+        await shell.openExternal('ms-settings:privacy');
+      }
+    } else if (isMac) {
+      if (type === 'microphone') {
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+      } else {
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+      }
+    }
+  });
+
+  ipcMain.handle('system:get-permission-status', () => {
+    let micStatus = 'unknown';
+    try {
+      if (systemPreferences?.getMediaAccessStatus) {
+        micStatus = systemPreferences.getMediaAccessStatus('microphone');
+      }
+    } catch {
+      micStatus = 'unknown';
+    }
+    return {
+      microphone: micStatus,
+      platform: process.platform,
+      isWindows: process.platform === 'win32',
+      isMac: process.platform === 'darwin',
+    };
+  });
 }
+
 

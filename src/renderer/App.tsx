@@ -3,7 +3,6 @@ import { Theme } from '@astryxdesign/core';
 import { neutralTheme } from './theme/neutral';
 import { AppLayout } from './AppLayout';
 import { MiniWidget } from './MiniWidget';
-import { ModelManagerModal } from './ModelManagerModal';
 import { RecordingPage } from './RecordingPage';
 import { RecordingsListPage } from './RecordingsListPage';
 import { SettingsPage, type ThemeMode } from './SettingsPage';
@@ -14,7 +13,6 @@ export function App(): React.ReactNode {
   // Default launch state is mini widget
   const [viewMode, setViewMode] = useState<'main' | 'mini'>('mini');
   const [mainPage, setMainPage] = useState<'recordings' | 'recording' | 'settings'>('recordings');
-  const [modelsModalOpen, setModelsModalOpen] = useState(false);
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('miniscribe.themeMode') : null;
@@ -101,6 +99,13 @@ export function App(): React.ReactNode {
   }, [inputs.micConstraintId, inputs.test, mic, session, system]);
 
   const handleToggleRecord = useCallback(() => {
+    if (hasModel === false) {
+      setMainPage('settings');
+      if (viewMode === 'mini') switchWindowMode('main');
+      session.notify(false, 'Please download a Speech Recognition Model in Settings to start recording.');
+      return;
+    }
+
     if (isRecording) {
       // Stopping is the moment the transcript becomes the thing you want to
       // look at, so the app comes forward to show it — from the widget, that
@@ -132,6 +137,7 @@ export function App(): React.ReactNode {
     delayStartSeconds,
     diarize,
     executeStartRecording,
+    hasModel,
     isRecording,
     numSpeakers,
     session,
@@ -169,9 +175,14 @@ export function App(): React.ReactNode {
    * already live.
    */
   const handleGoToWidget = useCallback(() => {
+    if (hasModel === false) {
+      setMainPage('settings');
+      session.notify(false, 'Please download a speech model in Settings before opening the widget.');
+      return;
+    }
     if (!isRecording) session.newSession();
     switchWindowMode('mini');
-  }, [isRecording, session, switchWindowMode]);
+  }, [hasModel, isRecording, session, switchWindowMode]);
 
   const handleDeleteRecording = useCallback(
     (id: string) => {
@@ -190,10 +201,6 @@ export function App(): React.ReactNode {
     }
   }, [switchWindowMode, viewMode]);
 
-  const handleOpenModelsModal = useCallback(() => {
-    handleOpenSettings();
-  }, [handleOpenSettings]);
-
   return (
     <Theme theme={neutralTheme} mode={themeMode}>
       {viewMode === 'mini' ? (
@@ -202,6 +209,8 @@ export function App(): React.ReactNode {
           isPaused={isPaused}
           onTogglePause={() => session.setPaused(!isPaused)}
           isBusy={isBusy}
+          hasModel={hasModel}
+          status={session.status}
           mic={mic}
           setMic={setMic}
           system={system}
@@ -218,7 +227,7 @@ export function App(): React.ReactNode {
           onToggleRecord={handleToggleRecord}
           onOpenRecordingsList={handleOpenRecordingsListFromMini}
           onExpandMainApp={() => switchWindowMode('main')}
-          onOpenModelsModal={handleOpenModelsModal}
+          onOpenSettings={handleOpenSettings}
           isAlwaysOnTop={isAlwaysOnTop}
           onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
           onCloseWindow={() => void window.api.windowClose()}
@@ -229,8 +238,7 @@ export function App(): React.ReactNode {
           isBusy={isBusy || isRecording}
           onGoToRecordings={() => setMainPage('recordings')}
           onGoToSettings={handleOpenSettings}
-          onNewRecording={handleGoToWidget}
-          onOpenModelsModal={handleOpenModelsModal}
+          onNewRecording={hasModel === false ? handleOpenSettings : handleGoToWidget}
           onSwitchToMiniMode={() => switchWindowMode('mini')}
           onMinimizeWindow={() => void window.api.windowMinimize()}
           onCloseWindow={() => void window.api.windowClose()}
@@ -240,9 +248,11 @@ export function App(): React.ReactNode {
               recordings={recordings}
               loadedRecordingId={loadedRecording}
               isBusy={isBusy || isRecording}
+              hasModel={hasModel}
               onOpenRecording={handleOpenRecording}
               onRefreshRecordings={() => void session.refreshRecordings()}
-              onNewRecording={handleGoToWidget}
+              onNewRecording={hasModel === false ? handleOpenSettings : handleGoToWidget}
+              onGoToSettings={handleOpenSettings}
               onDeleteRecording={handleDeleteRecording}
               notice={session.notice}
               onDismissNotice={session.dismissNotice}
@@ -259,6 +269,7 @@ export function App(): React.ReactNode {
               themeMode={themeMode}
               onThemeModeChange={handleThemeModeChange}
               onModelsChanged={() => void refreshModels()}
+              onGoToWidget={handleGoToWidget}
             />
           ) : (
             <RecordingPage
@@ -276,11 +287,6 @@ export function App(): React.ReactNode {
           )}
         </AppLayout>
       )}
-
-      <ModelManagerModal
-        isOpen={modelsModalOpen}
-        onClose={() => setModelsModalOpen(false)}
-      />
     </Theme>
   );
 }

@@ -66,6 +66,7 @@ declare global {
       onLiveUtterance: (cb: (u: LiveUtterance) => void) => void;
       onLiveActivity: (cb: (a: { kind: TrackKind; speaking: boolean }) => void) => void;
       onLiveError: (cb: (message: string) => void) => void;
+      onTranscribeProgress: (cb: (progress: { stage: string; percent: number }) => void) => void;
       transcribeFiles: (tracks: TrackFile[]) => Promise<TranscriptSegment[]>;
       recordingsList: () => Promise<Recording[]>;
       recordingsTranscribe: (
@@ -104,6 +105,13 @@ declare global {
       updaterDownload: () => Promise<UpdateState>;
       updaterInstall: () => Promise<UpdateState>;
       onUpdaterChanged: (cb: (state: UpdateState) => void) => void;
+      systemOpenPrivacySettings: (type?: 'microphone' | 'screen') => Promise<void>;
+      systemGetPermissionStatus: () => Promise<{
+        microphone: string;
+        platform: string;
+        isWindows: boolean;
+        isMac: boolean;
+      }>;
     };
   }
 }
@@ -393,6 +401,9 @@ export function useSession(): Session {
     });
     window.api.onLiveError((m) => {
       setStatus({ kind: 'error', text: `ASR error: ${m}` });
+    });
+    window.api.onTranscribeProgress?.((p) => {
+      setStatus({ kind: 'working', text: `${p.stage}` });
     });
     void refreshRecordings();
   }, [appendLine, refreshRecordings]);

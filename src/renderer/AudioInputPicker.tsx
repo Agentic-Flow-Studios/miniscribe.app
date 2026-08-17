@@ -6,7 +6,7 @@ import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { AudioLines, CircleAlert, CircleCheck, Square } from 'lucide-react';
+import { AudioLines, CircleAlert, CircleCheck, ExternalLink, RefreshCw, Square } from 'lucide-react';
 import { SYSTEM_DEFAULT_INPUT, type AudioInputs } from './use-audio-inputs';
 
 interface AudioInputPickerProps {
@@ -49,9 +49,13 @@ export function AudioInputPicker({
 
   const isListening = test.state === 'listening' || test.state === 'starting';
 
+  const handleOpenPrivacySettings = () => {
+    void window.api?.systemOpenPrivacySettings?.('microphone');
+  };
+
   return (
-    <VStack gap={1.5} hAlign="start">
-      <HStack gap={1.5} vAlign="end" wrap="wrap">
+    <VStack gap={2} hAlign="start" width="100%">
+      <HStack gap={1.5} vAlign="end" wrap="wrap" width="100%">
         <Selector
           label="Microphone"
           isLabelHidden={isLabelHidden}
@@ -60,15 +64,15 @@ export function AudioInputPicker({
           options={options}
           value={inputs.micDeviceId}
           onChange={inputs.chooseMic}
-          isDisabled={isDisabled}
+          isDisabled={isDisabled || inputs.permissionStatus === 'denied'}
           disabledMessage={isDisabled ? 'Stop the recording to switch microphone.' : undefined}
         />
         <Button
-          label={isListening ? 'Stop test' : 'Test'}
+          label={isListening ? 'Stop test' : 'Test Mic'}
           icon={<Icon icon={isListening ? Square : AudioLines} />}
           variant={isListening ? 'secondary' : 'ghost'}
           size="sm"
-          isDisabled={isDisabled}
+          isDisabled={isDisabled || inputs.permissionStatus === 'denied'}
           isLoading={test.state === 'starting'}
           clickAction={isListening ? test.stop : test.start}
           tooltip={
@@ -79,15 +83,59 @@ export function AudioInputPicker({
         />
       </HStack>
 
-      {!inputs.hasLabels && inputs.devices.length > 0 ? (
-        <Button
-          label="Show device names"
-          variant="ghost"
-          size="sm"
-          clickAction={inputs.revealNames}
-          tooltip="Asks for microphone access so this list can show real device names"
-        />
+      {inputs.permissionStatus === 'denied' ? (
+        <VStack
+          gap={1.5}
+          width="100%"
+          padding={3}
+          style={{
+            backgroundColor: 'var(--color-background-muted)',
+            border: '1px solid var(--color-error)',
+            borderRadius: '6px',
+          }}
+        >
+          <HStack gap={1.5} vAlign="center">
+            <Icon icon={CircleAlert} size="sm" color="error" />
+            <Text type="body" weight="medium" style={{ color: 'var(--color-error)' }}>
+              Microphone access blocked
+            </Text>
+          </HStack>
+          <Text type="supporting" size="sm" color="secondary">
+            {inputs.permissionError ||
+              'Miniscribe cannot access your microphone. Please enable microphone permissions in your Windows Privacy Settings.'}
+          </Text>
+          <HStack gap={2} vAlign="center" paddingBlock={0.5}>
+            <Button
+              label="Open Windows Microphone Settings"
+              icon={<Icon icon={ExternalLink} />}
+              variant="primary"
+              size="sm"
+              style={{ borderRadius: '9999px', backgroundColor: 'var(--color-accent)' }}
+              clickAction={handleOpenPrivacySettings}
+            />
+            <Button
+              label="Retry"
+              icon={<Icon icon={RefreshCw} />}
+              variant="ghost"
+              size="sm"
+              clickAction={() => void inputs.requestPermission()}
+            />
+          </HStack>
+        </VStack>
+      ) : !inputs.hasLabels && inputs.devices.length > 0 ? (
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <Button
+            label="Grant Permission & Reveal Device Names"
+            icon={<Icon icon={RefreshCw} />}
+            variant="ghost"
+            size="sm"
+            clickAction={inputs.revealNames}
+            tooltip="Asks for microphone access so this list can show real device names"
+          />
+        </HStack>
       ) : null}
+
+      <MicTestReadout inputs={inputs} />
     </VStack>
   );
 }

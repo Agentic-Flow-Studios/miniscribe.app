@@ -85,17 +85,33 @@ function getRecognizer(): any {
   }
 
   const modelFolder = path.join(modelsDir, spec.folderName);
+  const files = fs.existsSync(modelFolder) ? fs.readdirSync(modelFolder) : [];
 
   if (spec.type === 'nemo_transducer') {
+    const encoderFile =
+      files.find((f: string) => f.includes('encoder') && f.includes('int8') && f.endsWith('.onnx')) ??
+      files.find((f: string) => f.includes('encoder') && f.endsWith('.onnx')) ??
+      'encoder.int8.onnx';
+    const decoderFile =
+      files.find((f: string) => f.includes('decoder') && f.includes('int8') && f.endsWith('.onnx')) ??
+      files.find((f: string) => f.includes('decoder') && f.endsWith('.onnx')) ??
+      'decoder.int8.onnx';
+    const joinerFile =
+      files.find((f: string) => f.includes('joiner') && f.includes('int8') && f.endsWith('.onnx')) ??
+      files.find((f: string) => f.includes('joiner') && f.endsWith('.onnx')) ??
+      'joiner.int8.onnx';
+    const tokensFile =
+      files.find((f: string) => f.includes('tokens') && f.endsWith('.txt')) ?? 'tokens.txt';
+
     recognizer = new sherpa.OfflineRecognizer({
       featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
       modelConfig: {
         transducer: {
-          encoder: path.join(modelFolder, 'encoder.int8.onnx'),
-          decoder: path.join(modelFolder, 'decoder.int8.onnx'),
-          joiner: path.join(modelFolder, 'joiner.int8.onnx'),
+          encoder: path.join(modelFolder, encoderFile),
+          decoder: path.join(modelFolder, decoderFile),
+          joiner: path.join(modelFolder, joinerFile),
         },
-        tokens: path.join(modelFolder, 'tokens.txt'),
+        tokens: path.join(modelFolder, tokensFile),
         numThreads: 2,
         provider: 'cpu',
         debug: 0,
@@ -104,9 +120,16 @@ function getRecognizer(): any {
     });
   } else {
     // whisper
-    const files = fs.readdirSync(modelFolder);
-    const encoderFile = files.find((f: string) => f.includes('encoder') && f.endsWith('.onnx')) ?? 'encoder.onnx';
-    const decoderFile = files.find((f: string) => f.includes('decoder') && f.endsWith('.onnx')) ?? 'decoder.onnx';
+    const encoderFile =
+      files.find((f: string) => f.includes('encoder') && f.includes('int8') && f.endsWith('.onnx')) ??
+      files.find((f: string) => f.includes('encoder') && f.endsWith('.onnx')) ??
+      'encoder.onnx';
+    const decoderFile =
+      files.find((f: string) => f.includes('decoder') && f.includes('int8') && f.endsWith('.onnx')) ??
+      files.find((f: string) => f.includes('decoder') && f.endsWith('.onnx')) ??
+      'decoder.onnx';
+    const tokensFile =
+      files.find((f: string) => f.includes('tokens') && f.endsWith('.txt')) ?? 'tokens.txt';
 
     recognizer = new sherpa.OfflineRecognizer({
       featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
@@ -117,7 +140,7 @@ function getRecognizer(): any {
           language: 'en',
           task: 'transcribe',
         },
-        tokens: path.join(modelFolder, 'tokens.txt'),
+        tokens: path.join(modelFolder, tokensFile),
         numThreads: 2,
         provider: 'cpu',
         debug: 0,
@@ -141,10 +164,10 @@ function makeVad(): any {
     {
       sileroVad: {
         model: vadModel,
-        threshold: 0.5,
-        minSpeechDuration: 0.25,
-        minSilenceDuration: 0.5,
-        maxSpeechDuration: 4,
+        threshold: 0.35, // Responsive threshold so softer speech and video audio aren't missed
+        minSpeechDuration: 0.15, // 150ms allows short words/syllables instead of dropping them
+        minSilenceDuration: 0.8, // 800ms silence prevents splitting natural pauses mid-sentence
+        maxSpeechDuration: 15, // 15s (was 4s) ensures continuous phrases are not hard-chopped mid-word
         windowSize: VAD_WINDOW,
       },
       sampleRate: SAMPLE_RATE,
@@ -355,6 +378,22 @@ function assignSpeakers(utterances: Utterance[], diar: DiarSegment[]): number[] 
   });
 }
 
+export function safeDiarize(samples: Float32Array, numSpeakers?: number): DiarSegment[] {
+  try {
+    const sd = getDiarizer(numSpeakers ?? -1);
+    if (!sd) return [];
+    if (sd.sampleRate !== SAMPLE_RATE) {
+      console.warn(`[diarize] Diarizer expects ${sd.sampleRate}Hz, track is ${SAMPLE_RATE}Hz`);
+      return [];
+    }
+    const diar: DiarSegment[] = sd.process(samples);
+    return Array.isArray(diar) ? diar : [];
+  } catch (err) {
+    console.warn('[diarize] Diarization skipped or failed:', err);
+    return [];
+  }
+}
+
 function transcribeTrack(track: TrackInput): TranscriptSegment[] {
   const utterances = transcribeUtterances(track.samples);
   if (utterances.length === 0) return [];
@@ -364,11 +403,10 @@ function transcribeTrack(track: TrackInput): TranscriptSegment[] {
   }
 
   // Layer 3: diarize the whole track, then label each utterance by overlap.
-  const sd = getDiarizer(track.numSpeakers ?? -1);
-  if (sd.sampleRate !== SAMPLE_RATE) {
-    throw new Error(`Diarizer expects ${sd.sampleRate}Hz, track is ${SAMPLE_RATE}Hz`);
+  const diar = safeDiarize(track.samples, track.numSpeakers);
+  if (diar.length === 0) {
+    return utterances.map((u) => ({ ...u, speaker: track.speaker }));
   }
-  const diar: DiarSegment[] = sd.process(track.samples);
   const ids = assignSpeakers(utterances, diar);
 
   return utterances.map((u, i) => ({
@@ -394,6 +432,114 @@ export interface TrackFile {
   speaker: string;
   diarize?: boolean;
   numSpeakers?: number;
+}
+
+/**
+ * Run one track through VAD → per-utterance ASR asynchronously in 5-second
+ * chunks, yielding to the Node event loop between slices so GC can collect
+ * native buffers and the process never hangs or exhausts heap memory.
+ */
+export async function transcribeUtterancesAsync(
+  samples: Float32Array,
+  onProgress?: (ratio: number) => void,
+): Promise<Utterance[]> {
+  const track = makeLiveTrack();
+  const out: Utterance[] = [];
+  const CHUNK_SIZE = 16000 * 5; // 5 seconds per slice
+  const total = samples.length;
+  if (total === 0) return [];
+
+  for (let i = 0; i < total; i += CHUNK_SIZE) {
+    const slice = samples.subarray(i, Math.min(i + CHUNK_SIZE, total));
+    out.push(...track.push(slice));
+    if (onProgress) {
+      onProgress(Math.min(1, (i + slice.length) / total));
+    }
+    // Yield to the event loop so GC and worker messages can process cleanly
+    await new Promise((r) => setImmediate(r));
+  }
+  out.push(...track.flush());
+  return out;
+}
+
+/**
+ * Transcribe whole WAV files asynchronously with live progress reporting and
+ * safe, non-blocking speaker diarization.
+ */
+export async function transcribeFilesAsync(
+  tracks: TrackFile[],
+  onProgress?: (stage: string, percent: number) => void,
+): Promise<TranscriptSegment[]> {
+  const all: TranscriptSegment[] = [];
+  const loaded: {
+    path: string;
+    samples: Float32Array;
+    speaker: string;
+    diarize?: boolean;
+    numSpeakers?: number;
+  }[] = [];
+
+  for (const t of tracks) {
+    if (!fs.existsSync(t.path)) continue;
+    try {
+      const wave = sherpa.readWave(t.path, false);
+      if (wave && wave.samples && wave.samples.length > 0) {
+        if (wave.sampleRate !== SAMPLE_RATE) {
+          console.warn(
+            `[transcribe] ${t.path} sample rate is ${wave.sampleRate}Hz, expected ${SAMPLE_RATE}Hz`,
+          );
+        }
+        loaded.push({
+          path: t.path,
+          samples: wave.samples,
+          speaker: t.speaker,
+          diarize: t.diarize,
+          numSpeakers: t.numSpeakers,
+        });
+      }
+    } catch (err) {
+      console.error(`[transcribe] failed to read ${t.path}:`, err);
+    }
+  }
+
+  if (loaded.length === 0) return [];
+
+  const total = loaded.length;
+  for (let idx = 0; idx < total; idx++) {
+    const t = loaded[idx];
+    const name = t.speaker || `Track ${idx + 1}`;
+
+    const utterances = await transcribeUtterancesAsync(t.samples, (ratio) => {
+      const pct = Math.round(((idx + ratio * 0.8) / total) * 100);
+      onProgress?.(`Transcribing ${name} (${Math.round(ratio * 100)}%)`, pct);
+    });
+
+    if (utterances.length === 0) continue;
+
+    if (!t.diarize) {
+      all.push(...utterances.map((u) => ({ ...u, speaker: t.speaker })));
+      continue;
+    }
+
+    onProgress?.(`Separating speakers for ${name}…`, Math.round(((idx + 0.85) / total) * 100));
+    await new Promise((r) => setImmediate(r));
+
+    const diar = safeDiarize(t.samples, t.numSpeakers);
+    if (diar.length > 0) {
+      const ids = assignSpeakers(utterances, diar);
+      all.push(
+        ...utterances.map((u, i) => ({
+          ...u,
+          speaker: ids[i] >= 0 ? `${t.speaker} ${ids[i] + 1}` : t.speaker,
+        })),
+      );
+    } else {
+      all.push(...utterances.map((u) => ({ ...u, speaker: t.speaker })));
+    }
+  }
+
+  all.sort((a, b) => a.start - b.start);
+  return all;
 }
 
 // Transcribe straight from the WAVs the recorder streamed to disk. The renderer

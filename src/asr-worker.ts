@@ -1,4 +1,11 @@
-import { makeLiveTrack, type LiveTrack, type Word } from './transcription';
+import {
+  makeLiveTrack,
+  transcribeFilesAsync,
+  type LiveTrack,
+  type TrackFile,
+  type TranscriptSegment,
+  type Word,
+} from './transcription';
 import type { TrackKind } from './capture-types';
 
 // Runs in a utilityProcess, not in main.
@@ -11,7 +18,8 @@ export type WorkerIn =
   | { type: 'warmup' }
   | { type: 'reset' }
   | { type: 'chunk'; kind: TrackKind; samples: Float32Array }
-  | { type: 'flush' };
+  | { type: 'flush' }
+  | { type: 'transcribe'; id: string; tracks: TrackFile[] };
 
 export type WorkerOut =
   | { type: 'ready' }
@@ -25,7 +33,10 @@ export type WorkerOut =
     }
   | { type: 'activity'; kind: TrackKind; speaking: boolean }
   | { type: 'flushed' }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'transcribe:progress'; id: string; stage: string; percent: number }
+  | { type: 'transcribe:done'; id: string; segments: TranscriptSegment[] }
+  | { type: 'transcribe:error'; id: string; error: string };
 
 // Electron's parentPort isn't in the ambient node types this project loads.
 const parentPort = (
@@ -117,6 +128,33 @@ parentPort.on('message', (e) => {
         }
         parentPort.postMessage({ type: 'flushed' });
         break;
+
+      case 'transcribe': {
+        const { id, tracks: fileTracks } = msg;
+        void transcribeFilesAsync(fileTracks, (stage, percent) => {
+          parentPort.postMessage({
+            type: 'transcribe:progress',
+            id,
+            stage,
+            percent,
+          });
+        })
+          .then((segments) => {
+            parentPort.postMessage({
+              type: 'transcribe:done',
+              id,
+              segments,
+            });
+          })
+          .catch((err) => {
+            parentPort.postMessage({
+              type: 'transcribe:error',
+              id,
+              error: (err as Error).message || String(err),
+            });
+          });
+        break;
+      }
     }
   } catch (err) {
     parentPort.postMessage({ type: 'error', message: (err as Error).message });

@@ -10,7 +10,7 @@ import {
   SideNavSection,
 } from '@astryxdesign/core/SideNav';
 import { VStack } from '@astryxdesign/core/VStack';
-import { Cpu, ExternalLink, ListMusic, Mic, Minus, Settings, X } from 'lucide-react';
+import { ExternalLink, ListMusic, Mic, Minus, Settings, X } from 'lucide-react';
 import { BrandCredit, FlowMark } from './Branding';
 
 export type NavPage = 'recordings' | 'recording' | 'settings';
@@ -23,7 +23,6 @@ interface AppLayoutProps {
   onGoToRecordings: () => void;
   onGoToSettings: () => void;
   onNewRecording: () => void;
-  onOpenModelsModal: () => void;
   onSwitchToMiniMode: () => void;
   onMinimizeWindow: () => void;
   onCloseWindow: () => void;
@@ -45,7 +44,6 @@ export function AppLayout({
   onGoToRecordings,
   onGoToSettings,
   onNewRecording,
-  onOpenModelsModal,
   onSwitchToMiniMode,
   onMinimizeWindow,
   onCloseWindow,
@@ -95,10 +93,6 @@ export function AppLayout({
                 isSelected={activePage === 'settings'}
                 onClick={onGoToSettings}
               />
-              {/* The mini widget reaches this modal through its own triple-dot
-                  menu; without an item here, the full window had no path to
-                  it at all. */}
-              <SideNavItem label="Speech Models" icon={Cpu} onClick={onOpenModelsModal} />
             </SideNavSection>
           </SideNav>
         </div>

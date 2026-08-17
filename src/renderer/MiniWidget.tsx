@@ -7,7 +7,7 @@ import { Popover } from '@astryxdesign/core/Popover';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { Clock, Cpu, ExternalLink, GripVertical, Mic, MicOff, MoreVertical, Pause, Pin, Play, Square, Volume2, X } from 'lucide-react';
+import { Clock, ExternalLink, GripVertical, Mic, MicOff, MoreVertical, Pause, Pin, Play, Settings, Square, Volume2, X } from 'lucide-react';
 import { RecordDot } from './RecordGlyph';
 import type { TrackKind } from '../capture-types';
 import { InputPanel, inputPanelHeight } from './InputPanel';
@@ -21,6 +21,8 @@ interface MiniWidgetProps {
   isPaused: boolean;
   onTogglePause: () => void;
   isBusy: boolean;
+  hasModel?: boolean | null;
+  status?: { kind: 'idle' | 'recording' | 'working' | 'done' | 'error'; text: string };
   mic: boolean;
   setMic: (val: boolean) => void;
   system: boolean;
@@ -38,7 +40,7 @@ interface MiniWidgetProps {
   onToggleRecord: () => void;
   onOpenRecordingsList: () => void;
   onExpandMainApp: () => void;
-  onOpenModelsModal: () => void;
+  onOpenSettings?: () => void;
   isAlwaysOnTop: boolean;
   onToggleAlwaysOnTop: () => void;
   onCloseWindow?: () => void;
@@ -86,6 +88,8 @@ export function MiniWidget({
   isPaused,
   onTogglePause,
   isBusy,
+  hasModel,
+  status,
   mic,
   setMic,
   system,
@@ -102,7 +106,7 @@ export function MiniWidget({
   onToggleRecord,
   onOpenRecordingsList,
   onExpandMainApp,
-  onOpenModelsModal,
+  onOpenSettings,
   isAlwaysOnTop,
   onToggleAlwaysOnTop,
   onCloseWindow,
@@ -137,6 +141,10 @@ export function MiniWidget({
     if (micPopoverOpen) stopTest();
   }, [micPopoverOpen, stopTest]);
 
+  const isError = status?.kind === 'error';
+  const needsModel = hasModel === false;
+  const micDenied = inputs.permissionStatus === 'denied';
+
   const statusLabel = isRecording
     ? isPaused
       ? 'Paused'
@@ -145,7 +153,23 @@ export function MiniWidget({
     ? `Starting in ${countdown}s`
     : isBusy
     ? 'Processing'
+    : isError
+    ? (status?.text || 'Error')
+    : needsModel
+    ? 'Setup: Download Model'
+    : micDenied
+    ? 'Mic Access Blocked'
     : 'Miniscribe Ready';
+
+  const statusVariant: 'accent' | 'neutral' | 'error' = isRecording && !isPaused
+    ? 'accent'
+    : isBusy
+    ? 'accent'
+    : isError || micDenied
+    ? 'error'
+    : needsModel
+    ? 'accent'
+    : 'neutral';
 
   return (
     <div
@@ -265,7 +289,11 @@ export function MiniWidget({
                 // button draws it rather than filling with colour.
                 width: '46px',
                 height: '46px',
-                border: '2px solid var(--color-border)',
+                border: needsModel
+                  ? '2px solid var(--color-accent)'
+                  : micDenied
+                  ? '2px solid var(--color-error)'
+                  : '2px solid var(--color-border)',
                 backgroundColor: 'var(--color-background-card)',
                 color: 'var(--color-text-primary)',
                 cursor: isBusy ? 'not-allowed' : 'pointer',
@@ -273,9 +301,13 @@ export function MiniWidget({
               }}
               // The button's only content is a shape, so the name has to be
               // stated: a screen reader would otherwise announce "button".
-              aria-label="Start recording"
+              aria-label={needsModel ? 'Speech model required — open Settings' : 'Start recording'}
               title={
-                countdown !== null
+                needsModel
+                  ? 'Setup required: download a speech model in Settings before recording'
+                  : micDenied
+                  ? 'Microphone access is blocked in Windows Privacy Settings'
+                  : countdown !== null
                   ? `Starting in ${countdown}s...`
                   : delayStartSeconds > 0
                   ? `Start recording (Delay ${delayStartSeconds}s)`
@@ -299,16 +331,33 @@ export function MiniWidget({
               room to read it and where the action was taken. */}
           <VStack gap={0.5} style={{ flex: 1, minWidth: 0, paddingInline: '2px' }}>
             <HStack gap={1} vAlign="center" hAlign="between">
-              <HStack gap={1} vAlign="center">
-                <StatusDot
-                  label={statusLabel}
-                  variant={isRecording && !isPaused ? 'accent' : isBusy ? 'accent' : 'neutral'}
-                  isPulsing={isRecording && !isPaused}
-                />
-                <Text type="label" size="sm" weight="semibold">
-                  {statusLabel}
-                </Text>
-              </HStack>
+              <div
+                style={{ cursor: needsModel ? 'pointer' : 'default', display: 'inline-flex' }}
+                onClick={needsModel ? onOpenSettings : undefined}
+                title={needsModel ? 'Click to open Settings & download a model' : undefined}
+              >
+                <HStack gap={1} vAlign="center">
+                  <StatusDot
+                    label={statusLabel}
+                    variant={statusVariant}
+                    isPulsing={isRecording && !isPaused}
+                  />
+                  <Text
+                    type="label"
+                    size="sm"
+                    weight="semibold"
+                    style={{
+                      color: needsModel
+                        ? 'var(--color-accent)'
+                        : micDenied || isError
+                        ? 'var(--color-error)'
+                        : undefined,
+                    }}
+                  >
+                    {statusLabel}
+                  </Text>
+                </HStack>
+              </div>
 
               {isRecording && (
                 <RecordingTimer seconds={recordedSeconds} isRunning={!isPaused} />
@@ -499,15 +548,15 @@ export function MiniWidget({
                     }}
                   />
                   <Button
-                    label="Speech Models..."
-                    icon={<Icon icon={Cpu} />}
+                    label="Settings..."
+                    icon={<Icon icon={Settings} />}
                     variant="ghost"
                     size="sm"
                     width="100%"
                     style={{ justifyContent: 'flex-start' }}
                     clickAction={() => {
                       setMenuPopoverOpen(false);
-                      onOpenModelsModal();
+                      onOpenSettings?.();
                     }}
                   />
                   <Button

@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('api', {
   onLiveError: (cb: (message: string) => void): void => {
     ipcRenderer.on('live:error', (_evt, m: string) => cb(m));
   },
+  onTranscribeProgress: (cb: (progress: { stage: string; percent: number }) => void): void => {
+    ipcRenderer.on('transcribe:progress', (_evt, p: { stage: string; percent: number }) => cb(p));
+  },
   transcribeFiles: (tracks: TrackFile[]) => ipcRenderer.invoke('transcribe-files', tracks),
   /** Past sessions on disk, newest first. */
   recordingsList: () => ipcRenderer.invoke('recordings:list'),
@@ -92,4 +95,14 @@ contextBridge.exposeInMainWorld('api', {
   onUpdaterChanged: (cb: (state: unknown) => void): void => {
     ipcRenderer.on('updater:changed', (_evt, s) => cb(s));
   },
+  /** Open OS-specific privacy settings page (e.g. Windows Microphone Settings). */
+  systemOpenPrivacySettings: (type: 'microphone' | 'screen' = 'microphone') =>
+    ipcRenderer.invoke('system:open-privacy-settings', type),
+  /** Query OS platform and permission status. */
+  systemGetPermissionStatus: (): Promise<{
+    microphone: string;
+    platform: string;
+    isWindows: boolean;
+    isMac: boolean;
+  }> => ipcRenderer.invoke('system:get-permission-status'),
 });

@@ -68,6 +68,29 @@ export const MODEL_CATALOG: ModelSpec[] = [
       'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.en.tar.bz2',
     archiveName: 'sherpa-onnx-whisper-small.en.tar.bz2',
     folderName: 'sherpa-onnx-whisper-small.en',
+    sha256: '0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a',
+  },
+  {
+    id: 'whisper-medium-en',
+    name: 'OpenAI Whisper Medium (.en)',
+    type: 'whisper',
+    description: 'High precision model with exceptional accuracy for complex audio, lectures & videos.',
+    sizeMb: 1800,
+    downloadUrl:
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-medium.en.tar.bz2',
+    archiveName: 'sherpa-onnx-whisper-medium.en.tar.bz2',
+    folderName: 'sherpa-onnx-whisper-medium.en',
+  },
+  {
+    id: 'whisper-large-v3',
+    name: 'OpenAI Whisper Large v3',
+    type: 'whisper',
+    description: 'Flagship OpenAI Whisper model. State-of-the-art accuracy across all accents & noisy audio.',
+    sizeMb: 1020,
+    downloadUrl:
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-large-v3.tar.bz2',
+    archiveName: 'sherpa-onnx-whisper-large-v3.tar.bz2',
+    folderName: 'sherpa-onnx-whisper-large-v3',
   },
 ];
 

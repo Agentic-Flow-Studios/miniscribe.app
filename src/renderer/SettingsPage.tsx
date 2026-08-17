@@ -17,6 +17,7 @@ import {
   Check,
   Cpu,
   Download,
+  ExternalLink,
   HardDrive,
   Laptop,
   Mic,
@@ -24,11 +25,13 @@ import {
   RefreshCw,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Sun,
   Trash2,
   Users,
   Volume2,
 } from 'lucide-react';
+import { AudioInputPicker } from './AudioInputPicker';
 import type { AudioInputs } from './use-audio-inputs';
 import type { ModelSpec, ModelStatus } from './use-session';
 import { useUpdater, type UpdateState } from './use-updater';
@@ -49,6 +52,7 @@ interface SettingsPageProps {
   onThemeModeChange: (mode: ThemeMode) => void;
   /** Installing or deleting a model changes what the rest of the app can do. */
   onModelsChanged?: () => void;
+  onGoToWidget?: () => void;
 }
 
 /** The update panel's headline: a badge, and the sentence under it. */
@@ -124,9 +128,11 @@ export function SettingsPage({
   setSystem,
   diarize,
   setDiarize,
+  inputs,
   themeMode,
   onThemeModeChange,
   onModelsChanged,
+  onGoToWidget,
 }: SettingsPageProps): React.ReactNode {
   const [catalog, setCatalog] = useState<ModelSpec[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ModelStatus>>({});
@@ -204,6 +210,12 @@ export function SettingsPage({
     }
   };
 
+  const hasInstalledModel = Object.values(statuses).some((s) => s.isInstalled);
+  const activeModel =
+    Object.values(statuses).find((s) => s.isActive) ||
+    Object.values(statuses).find((s) => s.isInstalled);
+  const micReady = inputs.hasLabels || inputs.permissionStatus === 'granted';
+
   return (
     <VStack height="100%" minHeight={0} gap={0}>
       {/* Page Header */}
@@ -226,6 +238,219 @@ export function SettingsPage({
         style={{ flex: 1 }}
       >
         <VStack maxWidth={SETTINGS_MAX_WIDTH} gap={4} paddingBlock={2}>
+          {/* First-Time Setup Checklist / FTUX Guide */}
+          <Card
+            padding={4}
+            style={{
+              backgroundColor: 'var(--color-background-card)',
+              border: hasInstalledModel && micReady
+                ? '1px solid var(--color-border)'
+                : '2px solid var(--color-accent)',
+              borderRadius: '8px',
+              boxShadow: 'var(--shadow-low)',
+            }}
+          >
+            <VStack gap={3} width="100%">
+              <HStack width="100%" vAlign="center" hAlign="between" wrap="wrap" gap={2}>
+                <HStack gap={2} vAlign="center">
+                  <HStack
+                    vAlign="center"
+                    hAlign="center"
+                    width={36}
+                    height={36}
+                    style={{
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--color-background-muted)',
+                    }}
+                  >
+                    <Icon icon={Sparkles} size="sm" color="accent" />
+                  </HStack>
+                  <VStack gap={0.5}>
+                    <HStack gap={1.5} vAlign="center">
+                      <Text
+                        type="body"
+                        weight="semibold"
+                        style={{ fontSize: '18px', color: 'var(--color-text-primary)' }}
+                      >
+                        Getting Started with Miniscribe
+                      </Text>
+                      <Badge
+                        variant={hasInstalledModel && micReady ? 'success' : 'info'}
+                        label={
+                          hasInstalledModel && micReady
+                            ? 'Ready to Record'
+                            : `${(hasInstalledModel ? 1 : 0) + (micReady ? 1 : 0)} of 2 Steps Completed`
+                        }
+                      />
+                    </HStack>
+                    <Text type="supporting" size="sm" color="secondary">
+                      Miniscribe runs 100% locally on your computer with zero cloud dependency.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </HStack>
+
+              <VStack gap={2} width="100%">
+                {/* Step 1: Speech Model */}
+                <Card
+                  padding={3}
+                  style={{
+                    backgroundColor: hasInstalledModel
+                      ? 'var(--color-background-muted)'
+                      : 'var(--color-background-elevated)',
+                    border: hasInstalledModel
+                      ? '1px solid var(--color-border)'
+                      : '1px solid var(--color-accent)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <VStack gap={2} width="100%">
+                    <HStack width="100%" vAlign="center" hAlign="between" wrap="wrap" gap={2}>
+                      <HStack gap={2} vAlign="center">
+                        <HStack
+                          vAlign="center"
+                          hAlign="center"
+                          width={28}
+                          height={28}
+                          style={{
+                            borderRadius: '50%',
+                            backgroundColor: hasInstalledModel
+                              ? 'var(--color-success)'
+                              : 'var(--color-accent)',
+                            color: '#ffffff',
+                            fontWeight: 'bold',
+                            fontSize: '13px',
+                          }}
+                        >
+                          {hasInstalledModel ? <Icon icon={Check} size="sm" color="inherit" /> : '1'}
+                        </HStack>
+                        <VStack gap={0.5}>
+                          <Text type="body" weight="semibold">
+                            Step 1: Speech Recognition Model {hasInstalledModel ? '(Ready)' : '(Required)'}
+                          </Text>
+                          <Text type="supporting" size="sm" color="secondary">
+                            {hasInstalledModel
+                              ? `Active model: ${activeModel?.id || 'Installed'}. Ready for offline meeting transcription.`
+                              : 'Download the recommended offline speech model (~600 MB) for on-device speech-to-text.'}
+                          </Text>
+                        </VStack>
+                      </HStack>
+
+                      {!hasInstalledModel && (
+                        <Button
+                          label={
+                            progressMap['parakeet-0.6b']
+                              ? 'Downloading Model…'
+                              : 'Download Recommended Model (Parakeet 0.6B)'
+                          }
+                          icon={<Icon icon={Download} />}
+                          variant="primary"
+                          size="sm"
+                          isLoading={
+                            !!progressMap['parakeet-0.6b'] &&
+                            progressMap['parakeet-0.6b'].pct < 100
+                          }
+                          clickAction={() => handleDownload('parakeet-0.6b')}
+                        />
+                      )}
+                    </HStack>
+
+                    {progressMap['parakeet-0.6b'] && progressMap['parakeet-0.6b'].pct < 100 && (
+                      <VStack gap={1} width="100%" paddingBlock={0.5}>
+                        <ProgressBar
+                          label="Downloading Parakeet TDT 0.6B"
+                          value={progressMap['parakeet-0.6b'].pct}
+                          variant="accent"
+                        />
+                        <HStack width="100%" vAlign="center" hAlign="between">
+                          <Text type="supporting" size="sm" color="secondary">
+                            {progressMap['parakeet-0.6b'].pct}% downloaded
+                          </Text>
+                          <Text type="supporting" size="sm" color="secondary">
+                            {progressMap['parakeet-0.6b'].speed.toFixed(1)} MB/s
+                          </Text>
+                        </HStack>
+                      </VStack>
+                    )}
+                  </VStack>
+                </Card>
+
+                {/* Step 2: Microphone Permission & Testing */}
+                <Card
+                  padding={3}
+                  style={{
+                    backgroundColor: micReady
+                      ? 'var(--color-background-muted)'
+                      : 'var(--color-background-elevated)',
+                    border: micReady
+                      ? '1px solid var(--color-border)'
+                      : '1px solid var(--color-accent)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <VStack gap={2} width="100%">
+                    <HStack width="100%" vAlign="center" hAlign="between" wrap="wrap" gap={2}>
+                      <HStack gap={2} vAlign="center">
+                        <HStack
+                          vAlign="center"
+                          hAlign="center"
+                          width={28}
+                          height={28}
+                          style={{
+                            borderRadius: '50%',
+                            backgroundColor: micReady
+                              ? 'var(--color-success)'
+                              : inputs.permissionStatus === 'denied'
+                              ? 'var(--color-error)'
+                              : 'var(--color-accent)',
+                            color: '#ffffff',
+                            fontWeight: 'bold',
+                            fontSize: '13px',
+                          }}
+                        >
+                          {micReady ? <Icon icon={Check} size="sm" color="inherit" /> : '2'}
+                        </HStack>
+                        <VStack gap={0.5}>
+                          <Text type="body" weight="semibold">
+                            Step 2: Microphone Access & Testing {micReady ? '(Ready)' : '(Required)'}
+                          </Text>
+                          <Text type="supporting" size="sm" color="secondary">
+                            {inputs.permissionStatus === 'denied'
+                              ? 'Microphone access is blocked by Windows/system privacy settings.'
+                              : micReady
+                              ? 'Microphone permission granted. Select your device and verify live audio levels.'
+                              : 'Grant microphone permissions and verify that your microphone is working.'}
+                          </Text>
+                        </VStack>
+                      </HStack>
+                    </HStack>
+
+                    <AudioInputPicker inputs={inputs} />
+                  </VStack>
+                </Card>
+
+                {/* Completion Action */}
+                {hasInstalledModel && micReady && onGoToWidget && (
+                  <HStack width="100%" vAlign="center" hAlign="between" wrap="wrap" gap={2} paddingBlock={0.5}>
+                    <HStack gap={1.5} vAlign="center">
+                      <Icon icon={Check} size="sm" color="success" />
+                      <Text type="body" weight="semibold">
+                        Setup is complete! You can start recording now.
+                      </Text>
+                    </HStack>
+                    <Button
+                      label="Open Mini Widget & Start Recording"
+                      icon={<Icon icon={Mic} />}
+                      variant="primary"
+                      size="sm"
+                      clickAction={onGoToWidget}
+                    />
+                  </HStack>
+                )}
+              </VStack>
+            </VStack>
+          </Card>
+
           {/* Section 1: Appearance & Theme Switcher */}
           <Card
             padding={4}
@@ -239,19 +464,18 @@ export function SettingsPage({
             <VStack gap={3} width="100%">
               <HStack width="100%" vAlign="center" hAlign="between" wrap="wrap" gap={2}>
                 <HStack gap={2} vAlign="center">
-                  <div
+                  <HStack
+                    vAlign="center"
+                    hAlign="center"
+                    width={36}
+                    height={36}
                     style={{
-                      width: '36px',
-                      height: '36px',
                       borderRadius: '50%',
                       backgroundColor: 'var(--color-background-muted)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
                     }}
                   >
                     <Icon icon={Sun} size="sm" color="accent" />
-                  </div>
+                  </HStack>
                   <VStack gap={0.5}>
                     <Text type="body" weight="semibold" style={{ fontSize: '18px', color: 'var(--color-text-primary)' }}>
                       Appearance & Theme
@@ -436,31 +660,39 @@ export function SettingsPage({
           >
             <VStack gap={3} width="100%">
               <HStack gap={2} vAlign="center">
-                <div
+                <HStack
+                  vAlign="center"
+                  hAlign="center"
+                  width={36}
+                  height={36}
                   style={{
-                    width: '36px',
-                    height: '36px',
                     borderRadius: '50%',
                     backgroundColor: 'var(--color-background-muted)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                   }}
                 >
                   <Icon icon={Mic} size="sm" color="accent" />
-                </div>
+                </HStack>
                 <VStack gap={0.5}>
                   <Text type="body" weight="semibold" style={{ fontSize: '18px', color: 'var(--color-text-primary)' }}>
-                    Capture Defaults
+                    Capture Defaults & Input Devices
                   </Text>
                   <Text type="supporting" size="sm" color="secondary">
-                    Configure default input tracks and speaker separation behavior for new takes.
+                    Configure default input tracks, select active microphone, and test audio hardware.
                   </Text>
                 </VStack>
               </HStack>
 
-              <VStack gap={2} width="100%">
-                <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={1}>
+              <VStack gap={3} width="100%">
+                <VStack gap={1} width="100%">
+                  <Text type="label" size="sm" weight="semibold" color="secondary">
+                    DEFAULT MICROPHONE DEVICE
+                  </Text>
+                  <AudioInputPicker inputs={inputs} />
+                </VStack>
+
+                <Divider />
+
+                <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={0.5}>
                   <HStack gap={1.5} vAlign="center">
                     <Icon icon={Mic} size="sm" color="secondary" />
                     <Text type="body" weight="medium">
@@ -472,7 +704,7 @@ export function SettingsPage({
 
                 <Divider />
 
-                <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={1}>
+                <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={0.5}>
                   <HStack gap={1.5} vAlign="center">
                     <Icon icon={Volume2} size="sm" color="secondary" />
                     <Text type="body" weight="medium">
@@ -484,7 +716,7 @@ export function SettingsPage({
 
                 <Divider />
 
-                <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={1}>
+                <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={0.5}>
                   <HStack gap={1.5} vAlign="center">
                     <Icon icon={Users} size="sm" color="secondary" />
                     <Text type="body" weight="medium">

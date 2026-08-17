@@ -181,6 +181,15 @@ function createWindow(): void {
     }
   });
 
+  // Explicitly allow media (mic) and display-capture permissions for local app frames
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    return permission === 'media';
+  });
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media' || (permission as string) === 'display-capture');
+  });
+
   // Route getDisplayMedia() requests so the renderer can capture SYSTEM audio safely.
   session.defaultSession.setDisplayMediaRequestHandler(
     (request, callback) => {

@@ -11,7 +11,7 @@ import { Token } from '@astryxdesign/core/Token';
 import { VStack } from '@astryxdesign/core/VStack';
 import { Play, Square } from 'lucide-react';
 import type { TrackKind } from '../capture-types';
-import { TRACK_SPEAKER, speakerColor, speakerColumns, speakerOf, wordsOf } from './speaker-labels';
+import { TRACK_SPEAKER, speakerColor, speakerColumns, speakerOf, wordAt, wordsOf } from './speaker-labels';
 import type { Activity, TranscriptLine } from './use-session';
 
 /**
@@ -30,10 +30,10 @@ interface Props {
   labels: Record<string, string>;
   /** Name a speaker; an empty name restores the raw id. */
   onRename: (speaker: string, name: string) => void;
-  /** The line sounding right now, if the recording is being played. */
-  activeLineId: number | null;
-  /** Index of the last word spoken in that line; -1 before its first word. */
-  activeWord: number;
+  /** Active line IDs sounding right now during playback. */
+  activeLineIds: Set<number>;
+  /** Current playback time in seconds for per-word highlighting. */
+  playerTime: number;
   isPlaying: boolean;
   /** Start playback from a line. Null while there is no audio to play. */
   onPlayFrom: ((line: TranscriptLine) => void) | null;
@@ -259,15 +259,15 @@ const Row = memo(function Row({
  */
 function UnifiedStream({
   ordered,
-  activeLineId,
-  activeWord,
+  activeLineIds,
+  playerTime,
   isPlaying,
   onPlayFrom,
   labels,
 }: {
   ordered: TranscriptLine[];
-  activeLineId: number | null;
-  activeWord: number;
+  activeLineIds: Set<number>;
+  playerTime: number;
   isPlaying: boolean;
   onPlayFrom: ((line: TranscriptLine) => void) | null;
   labels: Record<string, string>;
@@ -298,16 +298,20 @@ function UnifiedStream({
                 {fmtTime(group.lines[0].start)}
               </Text>
             </HStack>
-            {group.lines.map((line) => (
-              <LineCell
-                key={line.id}
-                line={line}
-                isActive={line.id === activeLineId}
-                activeWord={line.id === activeLineId ? activeWord : -1}
-                isPlaying={isPlaying}
-                onPlayFrom={onPlayFrom}
-              />
-            ))}
+            {group.lines.map((line) => {
+              const isActive = activeLineIds.has(line.id);
+              const activeWord = isActive ? wordAt(wordsOf(line), playerTime) : -1;
+              return (
+                <LineCell
+                  key={line.id}
+                  line={line}
+                  isActive={isActive}
+                  activeWord={activeWord}
+                  isPlaying={isPlaying}
+                  onPlayFrom={onPlayFrom}
+                />
+              );
+            })}
           </VStack>
         </Section>
       ))}
@@ -321,8 +325,8 @@ export function Transcript({
   activity,
   labels,
   onRename,
-  activeLineId,
-  activeWord,
+  activeLineIds,
+  playerTime,
   isPlaying,
   onPlayFrom,
   view,
@@ -335,10 +339,10 @@ export function Transcript({
     [lines],
   );
 
-  const activeSpeaker = useMemo(() => {
-    const line = ordered.find((l) => l.id === activeLineId);
-    return line ? speakerOf(line) : null;
-  }, [ordered, activeLineId]);
+  const activeSpeakers = useMemo(() => {
+    const active = ordered.filter((l) => activeLineIds.has(l.id));
+    return new Set(active.map((l) => speakerOf(l)));
+  }, [ordered, activeLineIds]);
 
   // Live state belongs to a TRACK, so it is shown against that track's own
   // column ('Me' / 'Them'), never against a cluster split out of it.
@@ -357,10 +361,11 @@ export function Transcript({
           <HStack gap={2} vAlign="center" wrap="wrap">
             {speakers.map((speaker) => {
               const live = liveFor(speaker);
+              const isTalking = activeSpeakers.has(speaker);
               return (
                 <HStack key={`name:${speaker}`} gap={1.5} vAlign="center">
                   <Token size="sm" color={speakerColor(speaker)} label={speaker} />
-                  {speaker === activeSpeaker ? (
+                  {isTalking ? (
                     <StatusDot
                       variant="accent"
                       isPulsing={isPlaying}
@@ -392,8 +397,8 @@ export function Transcript({
 
         <UnifiedStream
           ordered={ordered}
-          activeLineId={activeLineId}
-          activeWord={activeWord}
+          activeLineIds={activeLineIds}
+          playerTime={playerTime}
           isPlaying={isPlaying}
           onPlayFrom={onPlayFrom}
           labels={labels}
@@ -410,7 +415,7 @@ export function Transcript({
           // The speaker holding the floor is named by lifting their whole
           // header out of the muted band — the same signal as the highlighted
           // line, read from the top of the column instead of the middle of it.
-          const isTalking = speaker === activeSpeaker;
+          const isTalking = activeSpeakers.has(speaker);
           return (
             <Section
               key={`head:${speaker}`}
@@ -455,7 +460,8 @@ export function Transcript({
         })}
 
         {ordered.map((line) => {
-          const isActive = line.id === activeLineId;
+          const isActive = activeLineIds.has(line.id);
+          const activeWord = isActive ? wordAt(wordsOf(line), playerTime) : -1;
           return (
             <Row
               key={line.id}
@@ -465,7 +471,7 @@ export function Transcript({
               isActive={isActive}
               // Constant for every inactive row, so memo holds them still while
               // the highlight moves through the active one.
-              activeWord={isActive ? activeWord : -1}
+              activeWord={activeWord}
               isPlaying={isPlaying}
               onPlayFrom={onPlayFrom}
             />

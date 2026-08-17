@@ -12,16 +12,18 @@ import { IconButton } from '@astryxdesign/core/IconButton';
 import { Section } from '@astryxdesign/core/Section';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { AudioLines, Calendar, Mic, Search, Trash2, User, Users, Volume2 } from 'lucide-react';
+import { AudioLines, Calendar, Cpu, Mic, Search, Trash2, User, Users, Volume2 } from 'lucide-react';
 import type { Recording } from './use-session';
 
 interface RecordingsListPageProps {
   recordings: Recording[];
   loadedRecordingId: string | null;
   isBusy: boolean;
+  hasModel?: boolean | null;
   onOpenRecording: (id: string) => void;
   onRefreshRecordings: () => void;
   onNewRecording: () => void;
+  onGoToSettings?: () => void;
   /** Delete for good. The caller confirms nothing — this page asks first. */
   onDeleteRecording: (id: string) => void;
   /** The outcome of the last library action, to report where it happened. */
@@ -76,9 +78,11 @@ export function RecordingsListPage({
   recordings,
   loadedRecordingId,
   isBusy,
+  hasModel,
   onOpenRecording,
   onRefreshRecordings,
   onNewRecording,
+  onGoToSettings,
   onDeleteRecording,
   notice,
   onDismissNotice,
@@ -161,6 +165,15 @@ export function RecordingsListPage({
         </VStack>
       </Section>
 
+      {hasModel === false && (
+        <Banner
+          status="info"
+          container="section"
+          title="Speech Model Setup Required"
+          description="Miniscribe runs 100% offline and requires a local speech recognition model. Please open Settings to download the recommended speech model."
+        />
+      )}
+
       {notice && (
         <Banner
           status={notice.ok ? 'success' : 'error'}
@@ -190,17 +203,28 @@ export function RecordingsListPage({
               description={
                 searchQuery
                   ? 'Try adjusting your search query.'
+                  : hasModel === false
+                  ? 'To begin recording and local transcription, install our recommended speech model in Settings.'
                   : 'Start a recording session to capture meeting transcripts locally.'
               }
               icon={<Icon icon={Volume2} size="lg" />}
               actions={
                 !searchQuery ? (
-                  <Button
-                    label="Record in the Mini Widget"
-                    icon={<Icon icon={Mic} />}
-                    variant="primary"
-                    clickAction={onNewRecording}
-                  />
+                  hasModel === false ? (
+                    <Button
+                      label="Set Up Speech Model in Settings"
+                      icon={<Icon icon={Cpu} />}
+                      variant="primary"
+                      clickAction={onGoToSettings || onNewRecording}
+                    />
+                  ) : (
+                    <Button
+                      label="Record in the Mini Widget"
+                      icon={<Icon icon={Mic} />}
+                      variant="primary"
+                      clickAction={onNewRecording}
+                    />
+                  )
                 ) : undefined
               }
             />

@@ -75,8 +75,13 @@ const UNSUPPORTED_NOTE =
  * feed 404s) and "no network". Both arrive as transport errors whose own text
  * explains nothing about updates.
  */
-function friendlyError(err: { message?: string } | null): string {
-  const raw = err?.message || '';
+function friendlyError(err: unknown): string {
+  const raw =
+    typeof err === 'string'
+      ? err
+      : err && typeof err === 'object' && 'message' in err && typeof (err as { message?: unknown }).message === 'string'
+      ? ((err as { message: string }).message)
+      : '';
   if (/404/.test(raw)) return 'No published release to update to yet.';
   if (/ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|net::/.test(raw)) {
     return 'Could not reach the update server. Check your connection and try again.';
@@ -85,10 +90,12 @@ function friendlyError(err: { message?: string } | null): string {
 }
 
 function wireEvents(): void {
-  autoUpdater.on('checking-for-update', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updater: any = autoUpdater;
+  updater.on('checking-for-update', () => {
     publish({ stage: 'checking', message: null });
   });
-  autoUpdater.on('update-available', (info) => {
+  updater.on('update-available', (info: { version: string }) => {
     publish({
       stage: 'available',
       newVersion: info.version,
@@ -96,7 +103,7 @@ function wireEvents(): void {
       message: null,
     });
   });
-  autoUpdater.on('update-not-available', () => {
+  updater.on('update-not-available', () => {
     publish({
       stage: 'up-to-date',
       newVersion: null,
@@ -104,14 +111,14 @@ function wireEvents(): void {
       message: null,
     });
   });
-  autoUpdater.on('download-progress', (progress) => {
+  updater.on('download-progress', (progress: { percent: number; bytesPerSecond: number }) => {
     publish({
       stage: 'downloading',
       progressPct: Math.round(progress.percent),
       downloadSpeedMb: Math.round((progress.bytesPerSecond / 1_000_000) * 10) / 10,
     });
   });
-  autoUpdater.on('update-downloaded', (info) => {
+  updater.on('update-downloaded', (info: { version: string }) => {
     publish({
       stage: 'downloaded',
       newVersion: info.version,
@@ -120,8 +127,8 @@ function wireEvents(): void {
       message: null,
     });
   });
-  autoUpdater.on('error', (err) => {
-    console.warn('[updater]', err?.message || err);
+  updater.on('error', (err: Error | string) => {
+    console.warn('[updater]', (err as Error)?.message || err);
     publish({
       stage: 'error',
       lastCheckedAt: new Date().toISOString(),

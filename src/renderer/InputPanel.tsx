@@ -1,3 +1,4 @@
+import { Button } from '@astryxdesign/core/Button';
 import { Divider } from '@astryxdesign/core/Divider';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Icon } from '@astryxdesign/core/Icon';
@@ -5,7 +6,7 @@ import { Item } from '@astryxdesign/core/Item';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { Mic, MicOff, Volume2 } from 'lucide-react';
+import { CircleAlert, ExternalLink, Mic, MicOff, RefreshCw, Volume2 } from 'lucide-react';
 import { InputLevelMeter } from './InputLevelMeter';
 import { SYSTEM_DEFAULT_INPUT, type AudioInputs } from './use-audio-inputs';
 import { useInputLevels } from './use-input-levels';
@@ -41,7 +42,7 @@ const MAX_VISIBLE_ROWS = 5;
  */
 export function inputPanelHeight(deviceCount: number): number {
   const rows = Math.min(deviceCount + 1, MAX_VISIBLE_ROWS); // +1: system default
-  return 250 + rows * ROW_HEIGHT;
+  return 270 + rows * ROW_HEIGHT;
 }
 
 function SectionLabel({ children }: { children: string }): React.ReactNode {
@@ -75,13 +76,17 @@ export function InputPanel({
 }: InputPanelProps): React.ReactNode {
   // Not while recording: the take owns the devices, and on Windows a second
   // open of the same microphone can fail outright.
-  const isMonitoring = isOpen && mic && !isRecording;
+  const isMonitoring = isOpen && mic && !isRecording && inputs.permissionStatus !== 'denied';
   const { levels, unavailable } = useInputLevels(inputs.devices, isMonitoring);
 
   const rows = [
     { id: SYSTEM_DEFAULT_INPUT, label: 'System default' },
     ...inputs.devices,
   ];
+
+  const handleOpenPrivacySettings = () => {
+    void window.api?.systemOpenPrivacySettings?.('microphone');
+  };
 
   return (
     <VStack padding={3} gap={2} width={INPUT_PANEL_WIDTH} hAlign="start">
@@ -99,52 +104,96 @@ export function InputPanel({
 
       {mic ? (
         <VStack width="100%" gap={1}>
-          <VStack
-            width="100%"
-            gap={0}
-            isScrollable={rows.length > MAX_VISIBLE_ROWS}
-            style={{ maxHeight: `${MAX_VISIBLE_ROWS * ROW_HEIGHT}px` }}
-          >
-            {rows.map((row) => {
-              const isMissing = unavailable.includes(row.id);
-              return (
-                <Item
-                  key={row.id}
-                  label={row.label}
-                  labelLines={1}
-                  density="compact"
-                  isSelected={inputs.micDeviceId === row.id}
-                  isDisabled={isRecording}
-                  onClick={() => inputs.chooseMic(row.id)}
-                  startContent={
-                    <Icon
-                      icon={isMissing ? MicOff : Mic}
-                      size="sm"
-                      color={inputs.micDeviceId === row.id ? 'accent' : 'secondary'}
-                    />
-                  }
-                  endContent={
-                    isMissing ? (
-                      <Text type="supporting" size="sm" color="disabled">
-                        in use
-                      </Text>
-                    ) : (
-                      <InputLevelMeter
-                        levels={levels}
-                        deviceId={row.id}
-                        isIdle={!isMonitoring}
-                      />
-                    )
-                  }
+          {inputs.permissionStatus === 'denied' ? (
+            <VStack
+              gap={1}
+              width="100%"
+              padding={2}
+              style={{
+                backgroundColor: 'var(--color-background-muted)',
+                border: '1px solid var(--color-error)',
+                borderRadius: '6px',
+              }}
+            >
+              <HStack gap={1} vAlign="center">
+                <Icon icon={CircleAlert} size="sm" color="error" />
+                <Text type="supporting" size="sm" style={{ color: 'var(--color-error)' }}>
+                  Microphone access blocked by system
+                </Text>
+              </HStack>
+              <HStack gap={1} vAlign="center" wrap="wrap">
+                <Button
+                  label="Windows Privacy Settings"
+                  icon={<Icon icon={ExternalLink} />}
+                  variant="secondary"
+                  size="sm"
+                  clickAction={handleOpenPrivacySettings}
                 />
-              );
-            })}
-          </VStack>
+                <Button
+                  label="Retry"
+                  icon={<Icon icon={RefreshCw} />}
+                  variant="ghost"
+                  size="sm"
+                  clickAction={() => void inputs.requestPermission()}
+                />
+              </HStack>
+            </VStack>
+          ) : (
+            <VStack
+              width="100%"
+              gap={0}
+              isScrollable={rows.length > MAX_VISIBLE_ROWS}
+              style={{ maxHeight: `${MAX_VISIBLE_ROWS * ROW_HEIGHT}px` }}
+            >
+              {rows.map((row) => {
+                const isMissing = unavailable.includes(row.id);
+                return (
+                  <Item
+                    key={row.id}
+                    label={row.label}
+                    labelLines={1}
+                    density="compact"
+                    isSelected={inputs.micDeviceId === row.id}
+                    isDisabled={isRecording}
+                    onClick={() => inputs.chooseMic(row.id)}
+                    startContent={
+                      <Icon
+                        icon={isMissing ? MicOff : Mic}
+                        size="sm"
+                        color={inputs.micDeviceId === row.id ? 'accent' : 'secondary'}
+                      />
+                    }
+                    endContent={
+                      isMissing ? (
+                        <Text type="supporting" size="sm" color="disabled">
+                          in use
+                        </Text>
+                      ) : (
+                        <InputLevelMeter
+                          levels={levels}
+                          deviceId={row.id}
+                          isIdle={!isMonitoring}
+                        />
+                      )
+                    }
+                  />
+                );
+              })}
+            </VStack>
+          )}
 
-          {!inputs.hasLabels && inputs.devices.length > 0 ? (
-            <Text type="supporting" size="sm" color="secondary">
-              Device names appear once Miniscribe has held microphone access.
-            </Text>
+          {!inputs.hasLabels && inputs.devices.length > 0 && inputs.permissionStatus !== 'denied' ? (
+            <HStack width="100%" vAlign="center" hAlign="between" paddingBlock={0.5}>
+              <Text type="supporting" size="sm" color="secondary">
+                Generic device names shown.
+              </Text>
+              <Button
+                label="Reveal Names"
+                variant="ghost"
+                size="sm"
+                clickAction={inputs.revealNames}
+              />
+            </HStack>
           ) : null}
 
           <Text type="supporting" size="sm" color="secondary">
