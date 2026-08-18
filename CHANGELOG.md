@@ -6,6 +6,20 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-08-18
+
+### Added
+- Speaker diarization support for offline post-recording speaker separation.
+- Enhanced Audio Input picker with level meters, device selection, and test monitor.
+- Rich Speech Models management and configuration in Settings.
+
+### Fixed
+- Fixed model switching and recognizer reset between main process and ASR worker.
+- Fixed recording timing issues and audio worklet ring buffer synchronization.
+- Resolved draft release race condition during parallel asset upload in GitHub Actions.
+- Fixed updater type compatibility and error handling.
+- Restored macOS leg to CI workflow.
+
 ## [0.1.0] — 2026-08-17
 
 Pre-launch hardening pass, and the first tagged release.
