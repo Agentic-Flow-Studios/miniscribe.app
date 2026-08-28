@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { AudioInputPicker } from './AudioInputPicker';
 import type { AudioInputs } from './use-audio-inputs';
-import type { ModelSpec, ModelStatus } from './use-session';
+import type { ModelSpec, ModelStatus, TextNormalizerStatus } from './use-session';
 import { useUpdater, type UpdateState } from './use-updater';
 
 const SETTINGS_MAX_WIDTH = 960;
@@ -139,6 +139,8 @@ export function SettingsPage({
     Record<string, { pct: number; speed: number }>
   >({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [normalizer, setNormalizer] = useState<TextNormalizerStatus | null>(null);
+  const [normalizerProgress, setNormalizerProgress] = useState<{ pct: number; speed: number } | null>(null);
   const updater = useUpdater();
   const update = updateSummary(updater.state);
   const checkedAt = fmtChecked(updater.state.lastCheckedAt);
@@ -151,6 +153,7 @@ export function SettingsPage({
       const map: Record<string, ModelStatus> = {};
       for (const s of list) map[s.id] = s;
       setStatuses(map);
+      setNormalizer(await window.api.textNormalizerStatus());
     } catch (e) {
       console.error('[models] load error:', e);
     }
@@ -158,6 +161,13 @@ export function SettingsPage({
 
   useEffect(() => {
     void loadData();
+  }, []);
+
+  useEffect(() => {
+    window.api.onTextNormalizerProgress((p) => {
+      setNormalizerProgress({ pct: p.progressPct, speed: p.downloadSpeedMb });
+      if (p.progressPct >= 100) void loadData();
+    });
   }, []);
 
   useEffect(() => {
@@ -206,6 +216,32 @@ export function SettingsPage({
       setStatuses(map);
     } catch (e) {
       console.error('[models] set active error:', e);
+    }
+  };
+
+  const downloadNormalizer = async () => {
+    setErrorMsg(null);
+    setNormalizerProgress({ pct: 1, speed: 0 });
+    try {
+      setNormalizer(await window.api.textNormalizerDownload());
+    } catch (e) {
+      setErrorMsg(`Failed to download S1-mini: ${(e as Error).message}`);
+    }
+  };
+
+  const setNormalizerEnabled = async (enabled: boolean) => {
+    try {
+      setNormalizer(await window.api.textNormalizerSetEnabled(enabled));
+    } catch (e) {
+      setErrorMsg(`Could not update text cleanup: ${(e as Error).message}`);
+    }
+  };
+
+  const deleteNormalizer = async () => {
+    try {
+      setNormalizer(await window.api.textNormalizerDelete());
+    } catch (e) {
+      setErrorMsg(`Could not delete S1-mini: ${(e as Error).message}`);
     }
   };
 
@@ -644,6 +680,57 @@ export function SettingsPage({
                   );
                 })}
               </VStack>
+            </VStack>
+          </Card>
+
+          {/* Optional post-ASR text normalizer. */}
+          <Card
+            padding={4}
+            style={{
+              backgroundColor: 'var(--color-background-card)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              boxShadow: 'var(--shadow-low)',
+            }}
+          >
+            <VStack gap={3} width="100%">
+              <HStack width="100%" vAlign="center" hAlign="between" wrap="wrap" gap={2}>
+                <HStack gap={2} vAlign="center">
+                  <HStack vAlign="center" hAlign="center" width={36} height={36} style={{ borderRadius: '50%', backgroundColor: 'var(--color-background-muted)' }}>
+                    <Icon icon={Sparkles} size="sm" color="accent" />
+                  </HStack>
+                  <VStack gap={0.5}>
+                    <Text type="body" weight="semibold" style={{ fontSize: '18px', color: 'var(--color-text-primary)' }}>
+                      Transcript Cleanup — S1-mini by Superwhisper
+                    </Text>
+                    <Text type="supporting" size="sm" color="secondary">
+                      Optional local post-processing removes fillers and false starts, then applies punctuation and written numbers. English only.
+                    </Text>
+                  </VStack>
+                </HStack>
+                {normalizer?.isInstalled && (
+                  <Switch
+                    label="Clean recordings automatically"
+                    value={normalizer.isEnabled}
+                    changeAction={setNormalizerEnabled}
+                  />
+                )}
+              </HStack>
+              {normalizerProgress && normalizerProgress.pct < 100 && (
+                <VStack gap={1} width="100%">
+                  <ProgressBar label="Downloading S1-mini" value={normalizerProgress.pct} variant="accent" />
+                  <Text type="supporting" size="sm" color="secondary">
+                    {normalizerProgress.pct}% downloaded · {normalizerProgress.speed.toFixed(1)} MB/s
+                  </Text>
+                </VStack>
+              )}
+              <HStack width="100%" hAlign="end" gap={2}>
+                {normalizer?.isInstalled ? (
+                  <IconButton label="Delete S1-mini" icon={<Icon icon={Trash2} color="secondary" />} variant="ghost" size="sm" onClick={deleteNormalizer} />
+                ) : (
+                  <Button label="Download S1-mini (484 MB)" icon={<Icon icon={Download} />} variant="secondary" size="sm" isLoading={!!normalizerProgress && normalizerProgress.pct < 100} clickAction={downloadNormalizer} />
+                )}
+              </HStack>
             </VStack>
           </Card>
 

@@ -90,7 +90,7 @@ export function FlowMark({
  * Studio credit, at the foot of the side nav.
  */
 export function BrandCredit(): React.ReactNode {
-  const version = typeof process !== 'undefined' && process.env?.APP_VERSION ? process.env.APP_VERSION : 'v0.0.1';
+  const version = typeof process !== 'undefined' && process.env?.APP_VERSION ? process.env.APP_VERSION : 'v1.0.0';
 
   return (
     <VStack gap={1} paddingBlock={1}>

@@ -79,6 +79,17 @@ contextBridge.exposeInMainWorld('api', {
   modelsDownload: (id: string) => ipcRenderer.invoke('models:download', id),
   modelsDelete: (id: string) => ipcRenderer.invoke('models:delete', id),
   modelsSetActive: (id: string) => ipcRenderer.invoke('models:set-active', id),
+  textNormalizerStatus: () => ipcRenderer.invoke('text-normalizer:status'),
+  textNormalizerDownload: () => ipcRenderer.invoke('text-normalizer:download'),
+  textNormalizerSetEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke('text-normalizer:set-enabled', enabled),
+  textNormalizerDelete: () => ipcRenderer.invoke('text-normalizer:delete'),
+  recordingsCleanTranscript: (id: string) => ipcRenderer.invoke('recordings:clean-transcript', id),
+  onTextNormalizerProgress: (
+    cb: (progress: { progressPct: number; downloadSpeedMb: number }) => void,
+  ): void => {
+    ipcRenderer.on('text-normalizer:progress', (_evt, p) => cb(p));
+  },
   onModelProgress: (
     cb: (progress: { id: string; progressPct: number; downloadSpeedMb: number }) => void,
   ): void => {

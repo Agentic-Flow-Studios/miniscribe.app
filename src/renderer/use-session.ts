@@ -35,6 +35,12 @@ interface TrackFile {
 /** How a transcript was produced: streamed while recording, or a later re-run. */
 export type TranscriptSource = 'live' | 'rerun';
 
+export interface TextNormalizerStatus {
+  isInstalled: boolean;
+  isEnabled: boolean;
+  isDownloading: boolean;
+}
+
 /** The transcript stored beside a recording's audio. */
 interface StoredTranscript {
   version: number;
@@ -97,6 +103,14 @@ declare global {
       modelsDownload: (id: string) => Promise<ModelStatus[]>;
       modelsDelete: (id: string) => Promise<ModelStatus[]>;
       modelsSetActive: (id: string) => Promise<ModelStatus[]>;
+      textNormalizerStatus: () => Promise<TextNormalizerStatus>;
+      textNormalizerDownload: () => Promise<TextNormalizerStatus>;
+      textNormalizerSetEnabled: (enabled: boolean) => Promise<TextNormalizerStatus>;
+      textNormalizerDelete: () => Promise<TextNormalizerStatus>;
+      recordingsCleanTranscript: (id: string) => Promise<TranscriptSegment[]>;
+      onTextNormalizerProgress: (
+        cb: (progress: { progressPct: number; downloadSpeedMb: number }) => void,
+      ) => void;
       onModelProgress: (
         cb: (progress: { id: string; progressPct: number; downloadSpeedMb: number }) => void,
       ) => void;
@@ -609,7 +623,7 @@ export function useSession(): Session {
         // selected in the panel, and its lines playable. Any names typed while
         // it was still running are flushed to it now — until this moment there
         // was no directory on disk entitled to own them.
-        if (sessionId.current) {
+        if (sessionId.current && (await window.api.textNormalizerStatus()).isEnabled) {
           showLoaded(sessionId.current);
           if (Object.keys(labelsRef.current).length > 0) {
             void window.api
@@ -622,6 +636,14 @@ export function useSession(): Session {
         // the audio by recorderStop — so this recording opens instantly from
         // here on, even if the diarization pass below is cancelled or fails.
         setTranscriptInfo({ source: 'live', savedAt: new Date().toISOString() });
+
+        // The live text stays responsive during the meeting. Once it is safely
+        // saved, S1-mini replaces it with the local cleaned pass when enabled.
+        if (sessionId.current) {
+          setStatus({ kind: 'working', text: 'Cleaning transcript locally with S1-mini…' });
+          const cleaned = await window.api.recordingsCleanTranscript(sessionId.current);
+          showSegments(cleaned);
+        }
 
         if (!opts.diarize) {
           // The live output already is the transcript — nothing to re-run.
@@ -658,6 +680,9 @@ export function useSession(): Session {
             })
           : await window.api.transcribeFiles(tracks);
         showSegments(segments);
+        if (sessionId.current && (await window.api.textNormalizerStatus()).isEnabled) {
+          showSegments(await window.api.recordingsCleanTranscript(sessionId.current));
+        }
         setTranscriptInfo({ source: 'rerun', savedAt: new Date().toISOString() });
         const rtf = (performance.now() - t0) / 1000 / audioSecs;
         setStatus({
@@ -691,6 +716,9 @@ export function useSession(): Session {
       const t0 = performance.now();
       const segments = await window.api.recordingsTranscribe(id, opts);
       showSegments(segments);
+      if ((await window.api.textNormalizerStatus()).isEnabled) {
+        showSegments(await window.api.recordingsCleanTranscript(id));
+      }
       setTranscriptInfo({ source: 'rerun', savedAt: new Date().toISOString() });
       const elapsed = (performance.now() - t0) / 1000;
       setStatus(IDLE);

@@ -1,6 +1,6 @@
 {
   "name": "miniscribe",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "Local transcription & meeting capture with floating mini widget",
   "license": "MIT",
   "author": {
@@ -19,14 +19,14 @@
   "scripts": {
     "get-model": "node scripts/get-model.mjs",
     "hash-models": "node scripts/hash-models.mjs",
-    "build:main": "esbuild src/main.ts src/preload.ts src/asr-worker.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
+    "build:main": "esbuild src/main.ts src/preload.ts src/asr-worker.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater --external:node-llama-cpp",
     "build:renderer": "node scripts/build-renderer.mjs",
     "build:worklet": "esbuild src/renderer/capture-worklet.js --platform=browser --format=esm --outfile=dist/capture-worklet.js",
     "build": "npm run build:main && npm run build:renderer && npm run build:worklet",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "build:test": "esbuild src/transcription.ts src/recorder.ts src/ipc.ts src/updater.ts src/window-sizes.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater",
+    "build:test": "esbuild src/transcription.ts src/recorder.ts src/ipc.ts src/updater.ts src/window-sizes.ts --bundle --platform=node --format=cjs --outdir=dist --external:electron --external:sherpa-onnx-node --external:electron-updater --external:node-llama-cpp",
     "build:test:renderer": "esbuild src/renderer/session-metrics.ts src/renderer/transcript-export.ts --bundle --platform=node --format=cjs --outdir=dist/test",
     "test:metrics": "npm run build:test:renderer && node test/metrics-export-test.js",
     "test": "npm run build:test && electron test/electron-transcribe-test.js",
@@ -66,7 +66,12 @@
       "dist/capture-worklet.js",
       "src/renderer/index.html",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/@node-llama-cpp/win-arm64{,/**/*}",
+      "!node_modules/@node-llama-cpp/win-x64-cuda{,/**/*}",
+      "!node_modules/@node-llama-cpp/win-x64-cuda-ext{,/**/*}",
+      "!node_modules/@node-llama-cpp/win-x64-vulkan{,/**/*}",
+      "!node_modules/node-llama-cpp/llama{,/**/*}"
     ],
     "win": {
       "icon": "assets/icon.ico",
@@ -128,9 +133,9 @@
     "@types/react-dom": "^19.2.4",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "esbuild": "^0.28.2",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -145,6 +150,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
+    "node-llama-cpp": "^3.20.0",
     "sherpa-onnx-node": "1.13.4"
   }
 }

@@ -6,6 +6,25 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-08-28
+
+### Added
+- Optional on-device transcript cleanup powered by **S1-mini by Superwhisper**.
+  After speech recognition completes, it removes filler words and false starts,
+  resolves self-corrections, and applies readable punctuation, capitalization,
+  and written forms for numbers, dates, times, currency, and email addresses.
+- A Settings download and enable control for the 484 MB S1-mini model. It is
+  intentionally separate from speech-recognition models, so users can opt in
+  to cleanup without changing live transcription or recording behavior.
+- Local llama.cpp-backed inference for transcript cleanup. Raw audio and text
+  remain on the device; cleanup is a post-ASR stage, not a cloud service.
+
+### Changed
+- Saved recordings and explicit re-transcription runs now receive the same
+  cleanup pass when S1-mini is enabled. Speaker identity and segment timing are
+  preserved; word-level timings are omitted from rewritten text because they no
+  longer reliably correspond to the normalized wording.
+
 ## [0.1.1] — 2026-08-18
 
 ### Added

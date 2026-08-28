@@ -25,9 +25,15 @@ import {
   downloadModel,
   deleteModel,
   saveSettings,
+  loadSettings,
   MODEL_CATALOG,
   USER_DATA_ENV,
+  textNormalizerStatus,
+  downloadTextNormalizer,
+  setTextCleanupEnabled,
+  deleteTextNormalizer,
 } from './model-manager';
+import { normalizeTranscript } from './text-normalizer';
 import { MAIN_HEIGHT, MAIN_WIDTH, MINI_HEIGHT } from './window-sizes';
 import { placeMain, placeMini } from './window-position';
 
@@ -765,10 +771,33 @@ export function registerIpc(): void {
 
   ipcMain.handle('models:set-active', async (_evt, modelId: string) => {
     refuseWhileRecording('switching models');
-    saveSettings({ activeModelId: modelId });
+    saveSettings({ ...loadSettings(), activeModelId: modelId });
     resetRecognizer();
     await restartAsr();
     return listModelStatuses();
+  });
+
+  // S1-mini is an optional post-ASR stage. It never changes the speech model
+  // or the live worker, and is only allowed to touch transcripts by recording id.
+  ipcMain.handle('text-normalizer:status', () => textNormalizerStatus());
+  ipcMain.handle('text-normalizer:download', async (evt) => {
+    refuseWhileRecording('downloading S1-mini');
+    return downloadTextNormalizer(evt.sender);
+  });
+  ipcMain.handle('text-normalizer:set-enabled', (_evt, enabled: boolean) =>
+    setTextCleanupEnabled(enabled === true),
+  );
+  ipcMain.handle('text-normalizer:delete', () => {
+    refuseWhileRecording('deleting S1-mini');
+    return deleteTextNormalizer();
+  });
+  ipcMain.handle('recordings:clean-transcript', async (_evt, id: string) => {
+    const dir = recordingDir(id);
+    const stored = readTranscript(dir);
+    if (!stored) throw new Error('This recording has no transcript to clean.');
+    const segments = await normalizeTranscript(stored.segments);
+    writeTranscript(dir, segments, stored.source);
+    return segments;
   });
 
   // --- System & Permissions -----------------------------------------------
@@ -808,5 +837,4 @@ export function registerIpc(): void {
     };
   });
 }
-
 

@@ -105,10 +105,28 @@ export interface ModelStatus {
 
 export interface AppSettings {
   activeModelId: string;
+  /** S1-mini is optional: ASR still works when its weights are not installed. */
+  textCleanupEnabled: boolean;
+}
+
+export const TEXT_NORMALIZER = {
+  id: 's1-mini',
+  name: 'S1-mini by Superwhisper',
+  description: 'Removes fillers and false starts; applies punctuation, capitalization, and written numbers.',
+  sizeMb: 484,
+  fileName: 's1-mini-q4_k_m.gguf',
+  downloadUrl: 'https://huggingface.co/superwhisper/s1-mini-GGUF/resolve/main/s1-mini-q4_k_m.gguf?download=true',
+};
+
+export interface TextNormalizerStatus {
+  isInstalled: boolean;
+  isEnabled: boolean;
+  isDownloading: boolean;
 }
 
 let activeClient: WebContents | null = null;
 let currentDownloadingModelId: string | null = null;
+let currentTextNormalizerDownload = false;
 
 /**
  * Where main tells the ASR worker to look. The worker runs in a utilityProcess,
@@ -142,18 +160,70 @@ export function loadSettings(): AppSettings {
     try {
       const data = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (data && typeof data.activeModelId === 'string') {
-        return { activeModelId: data.activeModelId };
+        return {
+          activeModelId: data.activeModelId,
+          textCleanupEnabled: data.textCleanupEnabled === true,
+        };
       }
     } catch (e) {
       console.warn('[model-manager] error reading settings:', e);
     }
   }
-  return { activeModelId: 'parakeet-0.6b' };
+  return { activeModelId: 'parakeet-0.6b', textCleanupEnabled: false };
 }
 
 export function saveSettings(settings: AppSettings): void {
   const file = getSettingsFile();
   fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+}
+
+export function textNormalizerPath(): string {
+  return path.join(getModelsDir(), TEXT_NORMALIZER.fileName);
+}
+
+export function textNormalizerStatus(): TextNormalizerStatus {
+  return {
+    isInstalled: fs.existsSync(textNormalizerPath()),
+    isEnabled: loadSettings().textCleanupEnabled,
+    isDownloading: currentTextNormalizerDownload,
+  };
+}
+
+export async function downloadTextNormalizer(clientWebContents: WebContents): Promise<TextNormalizerStatus> {
+  if (currentTextNormalizerDownload) throw new Error('S1-mini is already downloading.');
+  currentTextNormalizerDownload = true;
+  const destination = textNormalizerPath();
+  try {
+    await downloadFileWithProgress(TEXT_NORMALIZER.downloadUrl, destination, (received, total, speed) => {
+      clientWebContents.send('text-normalizer:progress', {
+        progressPct: total > 0 ? Math.round((received / total) * 100) : 0,
+        downloadSpeedMb: speed,
+      });
+    });
+    const settings = loadSettings();
+    saveSettings({ ...settings, textCleanupEnabled: true });
+    clientWebContents.send('text-normalizer:progress', { progressPct: 100, downloadSpeedMb: 0 });
+    return textNormalizerStatus();
+  } catch (error) {
+    fs.rmSync(destination, { force: true });
+    throw error;
+  } finally {
+    currentTextNormalizerDownload = false;
+  }
+}
+
+export function setTextCleanupEnabled(enabled: boolean): TextNormalizerStatus {
+  if (enabled && !fs.existsSync(textNormalizerPath())) {
+    throw new Error('Download S1-mini before enabling text cleanup.');
+  }
+  saveSettings({ ...loadSettings(), textCleanupEnabled: enabled });
+  return textNormalizerStatus();
+}
+
+export function deleteTextNormalizer(): TextNormalizerStatus {
+  fs.rmSync(textNormalizerPath(), { force: true });
+  saveSettings({ ...loadSettings(), textCleanupEnabled: false });
+  return textNormalizerStatus();
 }
 
 export function isModelInstalled(spec: ModelSpec): boolean {
@@ -302,7 +372,7 @@ export async function downloadModel(
     console.log(`[model-manager] ${spec.name} downloaded & ready.`);
 
     // A model the user just chose to download is the one they want to use.
-    saveSettings({ activeModelId: modelId });
+    saveSettings({ ...loadSettings(), activeModelId: modelId });
 
     currentDownloadingModelId = null;
     activeClient?.send('models:progress', {
