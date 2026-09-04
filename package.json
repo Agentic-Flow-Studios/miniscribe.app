@@ -124,23 +124,23 @@
     "theme": "@astryxdesign/theme-neutral"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "^0.3.0",
-    "@astryxdesign/core": "^0.3.0",
-    "@astryxdesign/theme-neutral": "^0.3.0",
+    "@astryxdesign/cli": "^0.5.0",
+    "@astryxdesign/core": "^0.5.0",
+    "@astryxdesign/theme-neutral": "^0.5.0",
     "@stylexjs/stylex": "^0.19.0",
     "@types/node": "^22.5.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "electron": "^43.3.0",
+    "@types/react-dom": "^19.2.5",
+    "electron": "^43.4.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "lucide-react": "^1.31.0",
+    "lucide-react": "^1.34.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^5.6.2",
-    "typescript-eslint": "^8.67.0"
+    "typescript-eslint": "^8.68.0"
   },
   "comments": {
     "build.electronLanguages": "Chromium ships ~50 locale .pak files, about 45MB, and the app is English-only: the Whisper builds in MODEL_CATALOG are the .en variants and the recognizer is constructed with language 'en'. Shipping translations for a UI that only speaks English is weight for nothing. Revisit the moment the UI gets localized - this is the line that has to grow first, or the new language will render as missing glyphs in the packaged build only, which is a miserable thing to debug.",
