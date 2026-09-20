@@ -150,7 +150,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
-    "node-llama-cpp": "^3.20.0",
+    "node-llama-cpp": "^3.21.1",
     "sherpa-onnx-node": "1.13.4"
   }
 }
