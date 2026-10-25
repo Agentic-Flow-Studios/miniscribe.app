@@ -149,8 +149,8 @@
     "sherpa-onnx-node": "PINNED EXACT, do not add a caret. 1.13.5 declares an optional dep on sherpa-onnx-darwin-arm64@^1.13.5, which is not published (404). Optional deps fail silently, so on Apple Silicon the install looks clean and then require() throws at runtime. Revisit once darwin-arm64 catches up."
   },
   "dependencies": {
-    "electron-updater": "^6.3.9",
-    "node-llama-cpp": "^3.20.0",
+    "electron-updater": "^6.8.11",
+    "node-llama-cpp": "^3.22.2",
     "sherpa-onnx-node": "1.13.4"
   }
 }
